@@ -236,8 +236,8 @@ const ContentSectionBlock = ({
                             onSave={(val) => onContentChange?.(section.fieldId, val)}
                             placeholder="Describe the core concept..."
                             multiline
-                            isEditModeActive={isEditMode}
-                            showAIButton={isEditMode}
+                            isEditModeActive={true}
+                            showAIButton={true}
                             onAIGenerate={() => onOpenAIModal?.(section.title, (val) => onSetSuggestion?.(section.fieldId, val))}
                             suggestion={suggestions[section.fieldId]}
                             onAcceptSuggestion={() => onAcceptSuggestion?.(section.fieldId)}
@@ -246,10 +246,10 @@ const ContentSectionBlock = ({
                     </div>
                 ) : section.content && typeof section.content === 'string' ? (
                     <div className="mb-6">
-                        {isEditMode ? (
+                        {section.fieldId ? (
                             <EditableField
                                 value={section.content}
-                                onSave={(val) => onContentChange?.(section.fieldId, val)} // Assume fieldId exists or handle properly
+                                onSave={(val) => onContentChange?.(section.fieldId, val)}
                                 placeholder={`Enter ${section.title.toLowerCase()}...`}
                                 multiline
                                 isEditModeActive={true}
@@ -283,8 +283,8 @@ const ContentSectionBlock = ({
                                             items={sub.colorContent || []}
                                             onSave={(items) => onListChange?.(sub.fieldId, items)}
                                             colorClass={sub.colorClass}
-                                            isEditModeActive={isEditMode}
-                                            showAIButton={isEditMode}
+                                            isEditModeActive={true}
+                                            showAIButton={true}
                                             onAIGenerate={() => onOpenAIModal?.(sub.title, (val) => {
                                                 const items = val.split('\n').filter(line => line.trim());
                                                 onListChange?.(sub.fieldId, items);
@@ -295,8 +295,8 @@ const ContentSectionBlock = ({
                                             items={sub.listContent || []}
                                             onSave={(items) => onListChange?.(sub.fieldId, items)}
                                             colorClass={cn("bg-white/5 text-white/70", sub.dotColor)}
-                                            isEditModeActive={isEditMode}
-                                            showAIButton={isEditMode}
+                                            isEditModeActive={true}
+                                            showAIButton={true}
                                             onAIGenerate={() => onOpenAIModal?.(sub.title, (val) => {
                                                 const items = val.split('\n').filter(line => line.trim());
                                                 onListChange?.(sub.fieldId, items);
@@ -308,8 +308,8 @@ const ContentSectionBlock = ({
                                             onSave={(val) => onContentChange?.(sub.fieldId, val)}
                                             placeholder={`Enter ${sub.title.toLowerCase()}...`}
                                             multiline
-                                            isEditModeActive={isEditMode}
-                                            showAIButton={isEditMode}
+                                            isEditModeActive={true}
+                                            showAIButton={true}
                                             onAIGenerate={() => onOpenAIModal?.(sub.title, (val) => onSetSuggestion?.(sub.fieldId, val))}
                                             suggestion={suggestions[sub.fieldId]}
                                             onAcceptSuggestion={() => onAcceptSuggestion?.(sub.fieldId)}
