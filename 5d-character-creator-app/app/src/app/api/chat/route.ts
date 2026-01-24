@@ -138,7 +138,39 @@ export async function OPTIONS() {
 
 export async function POST(req: Request) {
     try {
-        const { messages, provider = 'anthropic', apiKey } = await req.json();
+        // Parse request body with error handling
+        let body;
+        try {
+            body = await req.json();
+        } catch (parseError) {
+            console.error('Failed to parse request body:', parseError);
+            return new Response(
+                JSON.stringify({ error: 'Invalid request format. Please check your request body.' }),
+                { 
+                    status: 400, 
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        ...corsHeaders
+                    } 
+                }
+            );
+        }
+
+        const { messages, provider = 'anthropic', apiKey } = body;
+
+        // Validate messages array
+        if (!messages || !Array.isArray(messages) || messages.length === 0) {
+            return new Response(
+                JSON.stringify({ error: 'Messages array is required and must not be empty.' }),
+                { 
+                    status: 400, 
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        ...corsHeaders
+                    } 
+                }
+            );
+        }
 
         // RAG: Retrieve context based on the last user message
         const lastMessage = messages[messages.length - 1];
@@ -173,13 +205,27 @@ export async function POST(req: Request) {
 
         // Select the model based on provider
         let model;
-        if (provider === 'openai') {
-            const openai = createOpenAI({ apiKey });
-            model = openai('gpt-4o');
-        } else {
-            const anthropic = createAnthropic({ apiKey });
-            // Reverting to Haiku as it is confirmed working for your key
-            model = anthropic('claude-3-haiku-20240307');
+        try {
+            if (provider === 'openai') {
+                const openai = createOpenAI({ apiKey });
+                model = openai('gpt-4o');
+            } else {
+                const anthropic = createAnthropic({ apiKey });
+                // Using Sonnet for better quality, fallback to Haiku if needed
+                model = anthropic('claude-3-5-sonnet-20241022');
+            }
+        } catch (sdkError) {
+            console.error('AI SDK initialization error:', sdkError);
+            return new Response(
+                JSON.stringify({ error: `Failed to initialize AI SDK: ${sdkError instanceof Error ? sdkError.message : 'Unknown error'}` }),
+                { 
+                    status: 500, 
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        ...corsHeaders
+                    } 
+                }
+            );
         }
 
         // Prepare System Prompt with optional RAG Context
@@ -204,11 +250,50 @@ export async function POST(req: Request) {
 
         // DEBUG: Non-streaming generation
         console.log('Generating text (non-stream)...');
-        const { text } = await generateText({
-            model,
-            messages: coreMessages,
-        });
-        console.log('Generation complete, length:', text.length);
+        console.log('Provider:', provider);
+        console.log('Messages count:', coreMessages.length);
+        
+        let text;
+        try {
+            const result = await generateText({
+                model,
+                messages: coreMessages,
+            });
+            text = result.text;
+            console.log('Generation complete, length:', text.length);
+        } catch (genError) {
+            console.error('Text generation error:', genError);
+            const errorMsg = genError instanceof Error ? genError.message : String(genError);
+            
+            // Check for specific API errors
+            if (errorMsg.includes('401') || errorMsg.includes('authentication') || errorMsg.includes('Invalid API key')) {
+                return new Response(
+                    JSON.stringify({ error: 'Invalid API key. Please check your API key in Settings.' }),
+                    { 
+                        status: 401, 
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            ...corsHeaders
+                        } 
+                    }
+                );
+            }
+            
+            if (errorMsg.includes('429') || errorMsg.includes('rate limit')) {
+                return new Response(
+                    JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
+                    { 
+                        status: 429, 
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            ...corsHeaders
+                        } 
+                    }
+                );
+            }
+            
+            throw genError; // Re-throw to be caught by outer catch
+        }
 
         return new Response(text, {
             headers: {
@@ -218,27 +303,47 @@ export async function POST(req: Request) {
         });
     } catch (error: unknown) {
         console.error('Chat API Error:', error);
+        console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+        
         // Try to get the specific API error message if available
         let errorMessage = 'Unknown error occurred';
+        let statusCode = 500;
         
         if (error instanceof Error) {
             errorMessage = error.message;
+            
             // Check for common API errors
-            if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
+            if (errorMessage.includes('401') || errorMessage.includes('Unauthorized') || errorMessage.includes('authentication') || errorMessage.includes('Invalid API key')) {
                 errorMessage = 'Invalid API key. Please check your API key in Settings.';
+                statusCode = 401;
             } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
                 errorMessage = 'Rate limit exceeded. Please try again later.';
-            } else if (errorMessage.includes('timeout')) {
+                statusCode = 429;
+            } else if (errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT')) {
                 errorMessage = 'Request timed out. Please try again.';
+                statusCode = 504;
+            } else if (errorMessage.includes('ENOTFOUND') || errorMessage.includes('network')) {
+                errorMessage = 'Network error. Please check your internet connection.';
+                statusCode = 503;
             }
         } else {
             errorMessage = JSON.stringify(error);
         }
         
+        // Log full error details for debugging
+        console.error('Full error details:', {
+            message: errorMessage,
+            type: error instanceof Error ? error.constructor.name : typeof error,
+            stack: error instanceof Error ? error.stack : undefined
+        });
+        
         return new Response(
-            JSON.stringify({ error: `AI Error: ${errorMessage}` }),
+            JSON.stringify({ 
+                error: `AI Error: ${errorMessage}`,
+                details: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : String(error)) : undefined
+            }),
             { 
-                status: 500, 
+                status: statusCode, 
                 headers: { 
                     'Content-Type': 'application/json',
                     ...corsHeaders
