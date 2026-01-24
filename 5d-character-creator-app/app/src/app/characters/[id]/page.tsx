@@ -142,7 +142,7 @@ const Infobox = ({ data, title, imageUrl, type }: any) => (
 
         {/* Stats */}
         <div className="p-4 space-y-3">
-            {data.stats.map((stat: any, idx: number) => (
+            {data.stats && Array.isArray(data.stats) && data.stats.map((stat: any, idx: number) => (
                 <div
                     key={idx}
                     className="flex justify-between items-center py-2 border-b border-white/5 last:border-0"
@@ -158,7 +158,7 @@ const Infobox = ({ data, title, imageUrl, type }: any) => (
         </div>
 
         {/* Tags */}
-        {data.tags && data.tags.length > 0 && (
+        {data.tags && Array.isArray(data.tags) && data.tags.length > 0 && (
             <div className="px-4 pb-4">
                 <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">
                     Motivations
@@ -698,7 +698,7 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
             { label: 'Genre', value: character.genre || 'N/A' },
             { label: 'Phase', value: character.phase }
         ],
-        tags: character.motivations || []
+        tags: Array.isArray(character.motivations) ? character.motivations : []
     };
 
     return (
