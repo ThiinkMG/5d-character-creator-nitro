@@ -76,3 +76,6 @@ ai_build_plans/
 ai_context_learning/
 Session_Reports/
 ai-app-review-notes/
+
+# Local Netlify folder
+.netlify
