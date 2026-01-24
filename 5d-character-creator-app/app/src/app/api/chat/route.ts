@@ -211,8 +211,15 @@ export async function POST(req: Request) {
                 model = openai('gpt-4o');
             } else {
                 const anthropic = createAnthropic({ apiKey });
-                // Using Sonnet for better quality, fallback to Haiku if needed
-                model = anthropic('claude-3-5-sonnet-20241022');
+                // Try Sonnet first, but it will fall back gracefully if not available
+                // Using the latest Sonnet model
+                try {
+                    model = anthropic('claude-3-5-sonnet-20241022');
+                } catch (modelError) {
+                    // Fallback to Haiku if Sonnet is not available
+                    console.warn('Sonnet model not available, falling back to Haiku');
+                    model = anthropic('claude-3-haiku-20240307');
+                }
             }
         } catch (sdkError) {
             console.error('AI SDK initialization error:', sdkError);
