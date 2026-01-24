@@ -16,10 +16,14 @@ node scripts/auto-git-sync.js
 
 ## How It Works
 
-1. **Watches for file changes** in your repository
+1. **Watches for ALL file operations** in your repository:
+   - ✨ **Created/Added** - New files
+   - ✏️ **Modified/Edited** - File content changes
+   - 🗑️ **Deleted** - Removed files
+   - 📝 **Renamed/Moved** - File renames and moves
 2. **Waits 5 seconds** after the last change (to batch multiple edits)
-3. **Stages all changes** automatically
-4. **Commits** with a timestamp and list of changed files
+3. **Stages all changes** automatically (including deletions)
+4. **Commits** with a detailed timestamp and categorized list of changes
 5. **Pushes to GitHub** automatically
 
 ## Features

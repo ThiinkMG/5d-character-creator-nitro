@@ -63,6 +63,17 @@ function getGitStatus() {
   }
 }
 
+function getChangeType(statusLine) {
+  const status = statusLine.substring(0, 2).trim();
+  if (status.includes('??')) return 'Created';
+  if (status.includes('A')) return 'Added';
+  if (status.includes('M')) return 'Modified';
+  if (status.includes('D')) return 'Deleted';
+  if (status.includes('R')) return 'Renamed';
+  if (status.includes('C')) return 'Copied';
+  return 'Changed';
+}
+
 function stageAndCommit() {
   try {
     const changes = getGitStatus();
@@ -72,7 +83,7 @@ function stageAndCommit() {
       return;
     }
 
-    // Filter out ignored files
+    // Filter out ignored files and categorize changes
     const validChanges = changes.filter(change => {
       const filePath = change.substring(3).trim(); // Remove status prefix
       const fullPath = path.join(REPO_ROOT, filePath);
@@ -84,17 +95,46 @@ function stageAndCommit() {
       return;
     }
 
+    // Categorize changes
+    const created = validChanges.filter(c => c.startsWith('??') || c.startsWith('A'));
+    const modified = validChanges.filter(c => c.includes('M') && !c.startsWith('??') && !c.startsWith('A'));
+    const deleted = validChanges.filter(c => c.includes('D'));
+    const renamed = validChanges.filter(c => c.includes('R'));
+
+    console.log(`\n📦 Detected changes:`);
+    if (created.length > 0) console.log(`   ✨ ${created.length} file(s) created/added`);
+    if (modified.length > 0) console.log(`   ✏️  ${modified.length} file(s) modified`);
+    if (deleted.length > 0) console.log(`   🗑️  ${deleted.length} file(s) deleted`);
+    if (renamed.length > 0) console.log(`   📝 ${renamed.length} file(s) renamed/moved`);
     console.log(`\n📦 Staging ${validChanges.length} file(s)...`);
     
-    // Stage all changes
+    // Stage all changes (including deletions)
     execSync('git add -A', {
       cwd: REPO_ROOT,
       stdio: 'inherit'
     });
 
-    // Create commit message with timestamp
+    // Create detailed commit message
     const timestamp = new Date().toISOString();
-    const commitMessage = `Auto-commit: ${timestamp}\n\nFiles changed:\n${validChanges.map(c => `  - ${c.substring(3).trim()}`).join('\n')}`;
+    let changeDetails = [];
+    if (created.length > 0) {
+      changeDetails.push(`Created/Added (${created.length}):`);
+      created.forEach(c => changeDetails.push(`  + ${c.substring(3).trim()}`));
+    }
+    if (modified.length > 0) {
+      changeDetails.push(`Modified (${modified.length}):`);
+      modified.forEach(c => changeDetails.push(`  ~ ${c.substring(3).trim()}`));
+    }
+    if (deleted.length > 0) {
+      changeDetails.push(`Deleted (${deleted.length}):`);
+      deleted.forEach(c => changeDetails.push(`  - ${c.substring(3).trim()}`));
+    }
+    if (renamed.length > 0) {
+      changeDetails.push(`Renamed/Moved (${renamed.length}):`);
+      renamed.forEach(c => changeDetails.push(`  → ${c.substring(3).trim()}`));
+    }
+
+    const commitMessage = `Auto-commit: ${timestamp}\n\n${changeDetails.join('\n')}`;
 
     console.log('💾 Committing changes...');
     execSync(`git commit -m "${commitMessage.replace(/"/g, '\\"')}"`, {
@@ -140,7 +180,8 @@ function scheduleCommit() {
 function startWatcher() {
   console.log('👀 Starting file watcher...');
   console.log(`📁 Watching: ${REPO_ROOT}`);
-  console.log('⏱️  Changes will be committed after 5 seconds of inactivity\n');
+  console.log('⏱️  Changes will be committed after 5 seconds of inactivity');
+  console.log('📋 Monitoring: Create, Edit, Delete, Rename, Move\n');
 
   // Watch the entire repository
   fs.watch(REPO_ROOT, { recursive: true }, (eventType, filename) => {
@@ -153,23 +194,51 @@ function startWatcher() {
       return;
     }
 
-    // Skip if file doesn't exist (might be a delete event)
+    // Determine change type
+    let changeType = 'Changed';
+    let icon = '📝';
+    
     try {
-      if (!fs.existsSync(filePath) && eventType === 'rename') {
-        // File was deleted, still commit
-        console.log(`📝 Detected change: ${filename}`);
+      const exists = fs.existsSync(filePath);
+      
+      if (!exists) {
+        // File was deleted
+        changeType = 'Deleted';
+        icon = '🗑️';
+        console.log(`${icon} ${changeType}: ${filename}`);
         scheduleCommit();
         return;
       }
       
       const stats = fs.statSync(filePath);
+      
       if (stats.isFile()) {
-        console.log(`📝 Detected change: ${filename}`);
+        if (eventType === 'rename') {
+          // Could be rename or new file
+          changeType = 'Created/Renamed';
+          icon = '✨';
+        } else {
+          changeType = 'Modified';
+          icon = '✏️';
+        }
+        console.log(`${icon} ${changeType}: ${filename}`);
+        scheduleCommit();
+      } else if (stats.isDirectory() && eventType === 'rename') {
+        // Directory created
+        changeType = 'Directory Created';
+        icon = '📁';
+        console.log(`${icon} ${changeType}: ${filename}`);
         scheduleCommit();
       }
     } catch (error) {
       // File might not exist yet or was just deleted
-      console.log(`📝 Detected change: ${filename}`);
+      if (error.code === 'ENOENT') {
+        changeType = 'Deleted';
+        icon = '🗑️';
+        console.log(`${icon} ${changeType}: ${filename}`);
+      } else {
+        console.log(`📝 Detected change: ${filename}`);
+      }
       scheduleCommit();
     }
   });

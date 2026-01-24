@@ -71,7 +71,7 @@ function Stage-AndCommit {
             return
         }
         
-        # Filter out ignored files
+        # Filter out ignored files and categorize changes
         $validChanges = $changes | Where-Object {
             $filePath = ($_ -split '\s+', 2)[1]
             $fullPath = Join-Path $REPO_ROOT $filePath
@@ -83,18 +83,62 @@ function Stage-AndCommit {
             return
         }
         
+        # Categorize changes
+        $created = $validChanges | Where-Object { $_ -match '^\?\?' -or $_ -match '^A ' }
+        $modified = $validChanges | Where-Object { $_ -match '^ M' -or $_ -match '^M ' -and $_ -notmatch '^\?\?' -and $_ -notmatch '^A ' }
+        $deleted = $validChanges | Where-Object { $_ -match '^D ' -or $_ -match '^ D' }
+        $renamed = $validChanges | Where-Object { $_ -match '^R ' -or $_ -match '^ R' }
+        
+        Write-Host "`n📦 Detected changes:" -ForegroundColor Cyan
+        if ($created.Count -gt 0) { Write-Host "   ✨ $($created.Count) file(s) created/added" -ForegroundColor Green }
+        if ($modified.Count -gt 0) { Write-Host "   ✏️  $($modified.Count) file(s) modified" -ForegroundColor Yellow }
+        if ($deleted.Count -gt 0) { Write-Host "   🗑️  $($deleted.Count) file(s) deleted" -ForegroundColor Red }
+        if ($renamed.Count -gt 0) { Write-Host "   📝 $($renamed.Count) file(s) renamed/moved" -ForegroundColor Magenta }
         Write-Host "`n📦 Staging $($validChanges.Count) file(s)..." -ForegroundColor Cyan
         
-        # Stage all changes
+        # Stage all changes (including deletions)
         git add -A
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to stage files"
         }
         
-        # Create commit message
+        # Create detailed commit message
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        $fileList = ($validChanges | ForEach-Object { "  - $($_ -split '\s+', 2)[1]" }) -join "`n"
-        $commitMessage = "Auto-commit: $timestamp`n`nFiles changed:`n$fileList"
+        $changeDetails = @()
+        
+        if ($created.Count -gt 0) {
+            $changeDetails += "Created/Added ($($created.Count)):"
+            $created | ForEach-Object {
+                $filePath = ($_ -split '\s+', 2)[1]
+                $changeDetails += "  + $filePath"
+            }
+        }
+        
+        if ($modified.Count -gt 0) {
+            $changeDetails += "Modified ($($modified.Count)):"
+            $modified | ForEach-Object {
+                $filePath = ($_ -split '\s+', 2)[1]
+                $changeDetails += "  ~ $filePath"
+            }
+        }
+        
+        if ($deleted.Count -gt 0) {
+            $changeDetails += "Deleted ($($deleted.Count)):"
+            $deleted | ForEach-Object {
+                $filePath = ($_ -split '\s+', 2)[1]
+                $changeDetails += "  - $filePath"
+            }
+        }
+        
+        if ($renamed.Count -gt 0) {
+            $changeDetails += "Renamed/Moved ($($renamed.Count)):"
+            $renamed | ForEach-Object {
+                $filePath = ($_ -split '\s+', 2)[1]
+                $changeDetails += "  → $filePath"
+            }
+        }
+        
+        $commitMessage = "Auto-commit: $timestamp`n`n$($changeDetails -join "`n")"
         
         Write-Host "💾 Committing changes..." -ForegroundColor Cyan
         git commit -m $commitMessage
@@ -127,7 +171,8 @@ function Stage-AndCommit {
 function Start-FileWatcher {
     Write-Host "👀 Starting file watcher..." -ForegroundColor Cyan
     Write-Host "📁 Watching: $REPO_ROOT" -ForegroundColor Cyan
-    Write-Host "⏱️  Changes will be committed after $COMMIT_DELAY seconds of inactivity`n" -ForegroundColor Cyan
+    Write-Host "⏱️  Changes will be committed after $COMMIT_DELAY seconds of inactivity" -ForegroundColor Cyan
+    Write-Host "📋 Monitoring: Create, Edit, Delete, Rename, Move`n" -ForegroundColor Cyan
     
     $watcher = New-Object System.IO.FileSystemWatcher
     $watcher.Path = $REPO_ROOT
@@ -144,25 +189,46 @@ function Start-FileWatcher {
             return
         }
         
-        # Only process files (not directories)
-        if (Test-Path $filePath -PathType Leaf) {
-            Write-Host "📝 Detected change: $fileName" -ForegroundColor Gray
-            
-            # Cancel existing timer
-            if ($script:commitTimer) {
-                $script:commitTimer.Dispose()
+        # Determine icon and message based on change type
+        $icon = "📝"
+        $message = $changeType
+        
+        switch ($changeType) {
+            "Created" { $icon = "✨"; $message = "Created" }
+            "Changed" { $icon = "✏️"; $message = "Modified" }
+            "Deleted" { $icon = "🗑️"; $message = "Deleted" }
+            "Renamed" { 
+                $icon = "📝"
+                $oldName = $Event.SourceEventArgs.OldName
+                $newName = $Event.SourceEventArgs.Name
+                $message = "Renamed: $oldName → $newName"
             }
-            
-            # Schedule new commit
-            $script:commitTimer = [System.Timers.Timer]::new($COMMIT_DELAY * 1000)
-            $script:commitTimer.AutoReset = $false
-            $script:commitTimer.Add_Elapsed({
-                Stage-AndCommit
-            })
-            $script:commitTimer.Start()
         }
+        
+        # Handle both files and directories
+        if (Test-Path $filePath -PathType Leaf) {
+            Write-Host "$icon $message`: $fileName" -ForegroundColor Gray
+        } elseif ($changeType -eq "Created" -and (Test-Path $filePath -PathType Container)) {
+            Write-Host "📁 Directory Created: $fileName" -ForegroundColor Gray
+        } elseif ($changeType -eq "Deleted") {
+            Write-Host "$icon $message`: $fileName" -ForegroundColor Gray
+        }
+        
+        # Cancel existing timer
+        if ($script:commitTimer) {
+            $script:commitTimer.Dispose()
+        }
+        
+        # Schedule new commit
+        $script:commitTimer = [System.Timers.Timer]::new($COMMIT_DELAY * 1000)
+        $script:commitTimer.AutoReset = $false
+        $script:commitTimer.Add_Elapsed({
+            Stage-AndCommit
+        })
+        $script:commitTimer.Start()
     }
     
+    # Register all file system events
     Register-ObjectEvent -InputObject $watcher -EventName "Changed" -Action $action | Out-Null
     Register-ObjectEvent -InputObject $watcher -EventName "Created" -Action $action | Out-Null
     Register-ObjectEvent -InputObject $watcher -EventName "Deleted" -Action $action | Out-Null
