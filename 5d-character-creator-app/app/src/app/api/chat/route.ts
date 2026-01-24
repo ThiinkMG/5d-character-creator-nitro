@@ -125,6 +125,17 @@ import { retrieveContext } from '@/lib/knowledge';
 
 // ... (keep usage of retrieveContext import)
 
+// CORS headers for Netlify
+const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+export async function OPTIONS() {
+    return new Response(null, { headers: corsHeaders });
+}
+
 export async function POST(req: Request) {
     try {
         const { messages, provider = 'anthropic', apiKey } = await req.json();
@@ -150,7 +161,13 @@ export async function POST(req: Request) {
         if (!apiKey) {
             return new Response(
                 JSON.stringify({ error: 'API key is required. Please add your API key in Settings.' }),
-                { status: 400, headers: { 'Content-Type': 'application/json' } }
+                { 
+                    status: 400, 
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        ...corsHeaders
+                    } 
+                }
             );
         }
 
@@ -193,14 +210,40 @@ export async function POST(req: Request) {
         });
         console.log('Generation complete, length:', text.length);
 
-        return new Response(text);
+        return new Response(text, {
+            headers: {
+                'Content-Type': 'text/plain',
+                ...corsHeaders
+            }
+        });
     } catch (error: unknown) {
         console.error('Chat API Error:', error);
         // Try to get the specific API error message if available
-        const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+        let errorMessage = 'Unknown error occurred';
+        
+        if (error instanceof Error) {
+            errorMessage = error.message;
+            // Check for common API errors
+            if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
+                errorMessage = 'Invalid API key. Please check your API key in Settings.';
+            } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
+                errorMessage = 'Rate limit exceeded. Please try again later.';
+            } else if (errorMessage.includes('timeout')) {
+                errorMessage = 'Request timed out. Please try again.';
+            }
+        } else {
+            errorMessage = JSON.stringify(error);
+        }
+        
         return new Response(
             JSON.stringify({ error: `AI Error: ${errorMessage}` }),
-            { status: 500, headers: { 'Content-Type': 'application/json' } }
+            { 
+                status: 500, 
+                headers: { 
+                    'Content-Type': 'application/json',
+                    ...corsHeaders
+                } 
+            }
         );
     }
 }

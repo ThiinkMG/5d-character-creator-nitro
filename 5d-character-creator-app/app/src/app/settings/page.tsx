@@ -35,6 +35,7 @@ export default function SettingsPage() {
     const [saved, setSaved] = useState(false);
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
+    const [testError, setTestError] = useState<string | null>(null);
 
     // Load config from localStorage on mount
     useEffect(() => {
@@ -66,11 +67,13 @@ export default function SettingsPage() {
     const handleTest = async () => {
         setTesting(true);
         setTestResult(null);
+        setTestError(null);
 
         const apiKey = config.provider === 'anthropic' ? config.anthropicKey : config.openaiKey;
 
         if (!apiKey) {
             setTestResult('error');
+            setTestError('Please enter an API key first');
             setTesting(false);
             return;
         }
@@ -87,12 +90,42 @@ export default function SettingsPage() {
             });
 
             if (response.ok) {
-                setTestResult('success');
+                // Read the response to verify it worked
+                const text = await response.text();
+                if (text.toLowerCase().includes('connection successful') || text.trim().length > 0) {
+                    setTestResult('success');
+                    setTestError(null);
+                } else {
+                    setTestResult('error');
+                    setTestError('Unexpected response from API');
+                }
             } else {
+                // Try to read error message from response
+                let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                try {
+                    const errorData = await response.json();
+                    if (errorData.error) {
+                        errorMessage = errorData.error;
+                    }
+                } catch {
+                    // If response isn't JSON, try text
+                    try {
+                        const errorText = await response.text();
+                        if (errorText) {
+                            errorMessage = errorText;
+                        }
+                    } catch {
+                        // Use default error message
+                    }
+                }
                 setTestResult('error');
+                setTestError(errorMessage);
             }
-        } catch {
+        } catch (error) {
             setTestResult('error');
+            const errorMessage = error instanceof Error ? error.message : 'Network error - could not connect to API';
+            setTestError(errorMessage);
+            console.error('Connection test error:', error);
         }
 
         setTesting(false);
@@ -360,9 +393,16 @@ export default function SettingsPage() {
                     )}
 
                     {testResult === 'error' && (
-                        <div className="flex items-center gap-2 text-red-400 text-sm">
-                            <AlertCircle className="h-4 w-4" />
-                            <span>Connection failed</span>
+                        <div className="flex flex-col gap-2 text-red-400 text-sm">
+                            <div className="flex items-center gap-2">
+                                <AlertCircle className="h-4 w-4" />
+                                <span>Connection failed</span>
+                            </div>
+                            {testError && (
+                                <div className="text-xs text-red-300/80 ml-6 pl-2 border-l-2 border-red-400/30">
+                                    {testError}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
