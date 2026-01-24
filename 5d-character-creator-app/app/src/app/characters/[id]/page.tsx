@@ -333,15 +333,15 @@ const ContentSectionBlock = ({
 // MAIN PAGE COMPONENT
 // =============================================================================
 
-export default function CharacterProfilePage({ params }: { params: Promise<{ id: string }> }) {
+export default function CharacterProfilePage({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
     // Unwrap params to satisfy Next.js 15 dynamic APIs constraint
-    React.use(params);
-    const { id } = useParams();
+    React.use(paramsPromise);
+    const params = useParams();
     const router = useRouter();
     const { characters, updateCharacter } = useCharacterStore();
 
     // Find character
-    const characterId = decodeURIComponent(id as string);
+    const characterId = params?.id ? decodeURIComponent(params.id as string) : '';
     const character = characters.find(c => c.id === characterId);
 
     // Local State
