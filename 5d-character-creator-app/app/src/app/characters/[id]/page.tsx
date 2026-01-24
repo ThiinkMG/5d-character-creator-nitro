@@ -1051,7 +1051,7 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
 
                         {/* Left: Sidebar (TOC & Info) */}
-                        <div className="lg:col-span-2 space-y-6">
+                        <div className="lg:col-span-3 space-y-6">
                             <Infobox
                                 data={infoboxData}
                                 title={character.name}
@@ -1079,7 +1079,7 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
                         </div>
 
                         {/* Right: Content Sections */}
-                        <div className="lg:col-span-10 space-y-6">
+                        <div className="lg:col-span-9 space-y-6">
                             {/* View Mode Toggle */}
                             <div className="flex items-center justify-between mb-4">
                                 <div className="flex gap-2 p-1 rounded-lg bg-white/5 border border-white/10">
