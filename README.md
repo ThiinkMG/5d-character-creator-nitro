@@ -103,6 +103,31 @@ This project is configured for deployment on Netlify. The `netlify.toml` configu
 
 ---
 
+## 🔄 Automatic GitHub Sync
+
+This repository includes automatic Git sync scripts that automatically commit and push changes to GitHub.
+
+### Two Ways to Auto-Sync:
+
+1. **File Watcher** (Automatic commits on file changes):
+   - **Windows (PowerShell):**
+     ```powershell
+     .\scripts\auto-git-sync.ps1
+     ```
+   - **Cross-platform (Node.js):**
+     ```bash
+     node scripts/auto-git-sync.js
+     ```
+   - Watches for file changes and automatically commits/pushes after 5 seconds of inactivity
+
+2. **Git Hook** (Auto-push after manual commits):
+   - Already enabled! Every time you manually commit, it automatically pushes to GitHub
+   - No setup needed - it's already configured
+
+See `scripts/README.md` for more details.
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
