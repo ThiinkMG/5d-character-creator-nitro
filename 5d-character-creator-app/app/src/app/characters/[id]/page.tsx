@@ -333,7 +333,9 @@ const ContentSectionBlock = ({
 // MAIN PAGE COMPONENT
 // =============================================================================
 
-export default function CharacterProfilePage() {
+export default function CharacterProfilePage({ params }: { params: Promise<{ id: string }> }) {
+    // Unwrap params to satisfy Next.js 15 dynamic APIs constraint
+    React.use(params);
     const { id } = useParams();
     const router = useRouter();
     const { characters, updateCharacter } = useCharacterStore();
@@ -1160,77 +1162,72 @@ export default function CharacterProfilePage() {
                                     />
                                 </div>
                             ) : viewMode === 'prose' ? (
-                                /* EDITOR PROSE VIEW - Tab-based for focused editing */
-                                <div className="space-y-8">
-                                    {activeReadingTab === 'foundation' && (
-                                        <ProseSection
-                                            title="Foundation"
-                                            content={character.coreConcept || ''}
-                                            onChange={(val) => handleProseChange('coreConcept', val)}
-                                            placeholder="Describe who this character is at their core..."
-                                            onAiGenerate={() => handleOpenAIModal('Foundation', (val) => handleSetSuggestion('coreConcept', val))}
-                                            readOnly={false}
-                                            suggestion={suggestions['coreConcept']}
-                                            onAcceptSuggestion={() => handleAcceptSuggestion('coreConcept')}
-                                            onRejectSuggestion={() => handleRejectSuggestion('coreConcept')}
-                                        />
-                                    )}
+                                /* EDITOR PROSE VIEW - Shows all sections like Reading View but editable */
+                                <div className="space-y-12">
+                                    <ProseSection
+                                        id="prose-foundation"
+                                        title="Foundation"
+                                        content={character.coreConcept || ''}
+                                        onChange={(val) => handleProseChange('coreConcept', val)}
+                                        placeholder="Describe who this character is at their core..."
+                                        onAiGenerate={() => handleOpenAIModal('Foundation', (val) => handleSetSuggestion('coreConcept', val))}
+                                        readOnly={false}
+                                        suggestion={suggestions['coreConcept']}
+                                        onAcceptSuggestion={() => handleAcceptSuggestion('coreConcept')}
+                                        onRejectSuggestion={() => handleRejectSuggestion('coreConcept')}
+                                    />
 
-                                    {activeReadingTab === 'personality' && (
-                                        <ProseSection
-                                            title="Personality"
-                                            content={character.personalityProse || ''}
-                                            onChange={(val) => handleProseChange('personalityProse', val)}
-                                            placeholder="Describe their personality, motivations, flaws, and fears..."
-                                            onAiGenerate={() => handleOpenAIModal('Personality', (val) => handleSetSuggestion('personalityProse', val))}
-                                            readOnly={false}
-                                            suggestion={suggestions['personalityProse']}
-                                            onAcceptSuggestion={() => handleAcceptSuggestion('personalityProse')}
-                                            onRejectSuggestion={() => handleRejectSuggestion('personalityProse')}
-                                        />
-                                    )}
+                                    <ProseSection
+                                        id="prose-personality"
+                                        title="Personality"
+                                        content={character.personalityProse || ''}
+                                        onChange={(val) => handleProseChange('personalityProse', val)}
+                                        placeholder="Describe their personality, motivations, flaws, and fears..."
+                                        onAiGenerate={() => handleOpenAIModal('Personality', (val) => handleSetSuggestion('personalityProse', val))}
+                                        readOnly={false}
+                                        suggestion={suggestions['personalityProse']}
+                                        onAcceptSuggestion={() => handleAcceptSuggestion('personalityProse')}
+                                        onRejectSuggestion={() => handleRejectSuggestion('personalityProse')}
+                                    />
 
-                                    {activeReadingTab === 'backstory' && (
-                                        <ProseSection
-                                            title="Backstory"
-                                            content={character.backstoryProse || character.origin || ''}
-                                            onChange={(val) => handleProseChange('backstoryProse', val)}
-                                            placeholder="Tell their origin story, formative experiences..."
-                                            onAiGenerate={() => handleOpenAIModal('Backstory', (val) => handleSetSuggestion('backstoryProse', val))}
-                                            readOnly={false}
-                                            suggestion={suggestions['backstoryProse']}
-                                            onAcceptSuggestion={() => handleAcceptSuggestion('backstoryProse')}
-                                            onRejectSuggestion={() => handleRejectSuggestion('backstoryProse')}
-                                        />
-                                    )}
+                                    <ProseSection
+                                        id="prose-backstory"
+                                        title="Backstory"
+                                        content={character.backstoryProse || character.origin || ''}
+                                        onChange={(val) => handleProseChange('backstoryProse', val)}
+                                        placeholder="Tell their origin story, formative experiences..."
+                                        onAiGenerate={() => handleOpenAIModal('Backstory', (val) => handleSetSuggestion('backstoryProse', val))}
+                                        readOnly={false}
+                                        suggestion={suggestions['backstoryProse']}
+                                        onAcceptSuggestion={() => handleAcceptSuggestion('backstoryProse')}
+                                        onRejectSuggestion={() => handleRejectSuggestion('backstoryProse')}
+                                    />
 
-                                    {activeReadingTab === 'relationships' && (
-                                        <ProseSection
-                                            title="Relationships"
-                                            content={character.relationshipsProse || ''}
-                                            onChange={(val) => handleProseChange('relationshipsProse', val)}
-                                            placeholder="Describe key relationships..."
-                                            onAiGenerate={() => handleOpenAIModal('Relationships', (val) => handleSetSuggestion('relationshipsProse', val))}
-                                            readOnly={false}
-                                            suggestion={suggestions['relationshipsProse']}
-                                            onAcceptSuggestion={() => handleAcceptSuggestion('relationshipsProse')}
-                                            onRejectSuggestion={() => handleRejectSuggestion('relationshipsProse')}
-                                        />
-                                    )}
+                                    <ProseSection
+                                        id="prose-relationships"
+                                        title="Relationships"
+                                        content={character.relationshipsProse || ''}
+                                        onChange={(val) => handleProseChange('relationshipsProse', val)}
+                                        placeholder="Describe key relationships..."
+                                        onAiGenerate={() => handleOpenAIModal('Relationships', (val) => handleSetSuggestion('relationshipsProse', val))}
+                                        readOnly={false}
+                                        suggestion={suggestions['relationshipsProse']}
+                                        onAcceptSuggestion={() => handleAcceptSuggestion('relationshipsProse')}
+                                        onRejectSuggestion={() => handleRejectSuggestion('relationshipsProse')}
+                                    />
 
-                                    {activeReadingTab === 'arc' && (
-                                        <ProseSection
-                                            title="Character Arc"
-                                            content={character.arcProse || character.arcType || ''}
-                                            onChange={(val) => handleProseChange('arcProse', val)}
-                                            placeholder="Outline their narrative journey..."
-                                            onAiGenerate={() => handleOpenAIModal('Character Arc', (val) => handleSetSuggestion('arcProse', val))}
-                                            readOnly={false}
-                                            suggestion={suggestions['arcProse']}
-                                            onAcceptSuggestion={() => handleAcceptSuggestion('arcProse')}
-                                            onRejectSuggestion={() => handleRejectSuggestion('arcProse')}
-                                        />
-                                    )}
+                                    <ProseSection
+                                        id="prose-arc"
+                                        title="Character Arc"
+                                        content={character.arcProse || character.arcType || ''}
+                                        onChange={(val) => handleProseChange('arcProse', val)}
+                                        placeholder="Outline their narrative journey..."
+                                        onAiGenerate={() => handleOpenAIModal('Character Arc', (val) => handleSetSuggestion('arcProse', val))}
+                                        readOnly={false}
+                                        suggestion={suggestions['arcProse']}
+                                        onAcceptSuggestion={() => handleAcceptSuggestion('arcProse')}
+                                        onRejectSuggestion={() => handleRejectSuggestion('arcProse')}
+                                    />
                                 </div>
                             ) : (
                                 /* STRUCTURED TAG VIEW (Legacy) */

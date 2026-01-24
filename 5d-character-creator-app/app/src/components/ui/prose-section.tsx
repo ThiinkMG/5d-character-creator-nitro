@@ -52,8 +52,7 @@ export function ProseSection({
                             onClick={onAiGenerate}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
                                     bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20
-                                    transition-all hover:scale-105
-                                    opacity-0 group-focus-within:opacity-100 pointer-events-none group-focus-within:pointer-events-auto"
+                                    transition-all hover:scale-105"
                             title={`Generate ${title} with AI`}
                         >
                             <Wand2 className="w-3.5 h-3.5" />
