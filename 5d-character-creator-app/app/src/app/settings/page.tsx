@@ -515,17 +515,25 @@ export default function SettingsPage() {
                                 <Input
                                     type={showDalleKey ? 'text' : 'password'}
                                     value={config.dalleKey || config.openaiKey} // Fallback to main OpenAI key if same
-                                    onChange={(e) => setConfig({ ...config, dalleKey: e.target.value })}
-                                    placeholder="sk-..."
-                                    className="pr-10 bg-background/50"
+                                    onChange={(e) => !isAdminMode && setConfig({ ...config, dalleKey: e.target.value })}
+                                    placeholder={isAdminMode ? "••••••••••••" : "sk-..."}
+                                    className={cn("pr-10 bg-background/50", isAdminMode && "opacity-50 cursor-not-allowed")}
+                                    disabled={isAdminMode}
                                 />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowDalleKey(!showDalleKey)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                                >
-                                    {showDalleKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                </button>
+                                {!isAdminMode && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowDalleKey(!showDalleKey)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                    >
+                                        {showDalleKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    </button>
+                                )}
+                                {isAdminMode && (
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                        <Lock className="h-4 w-4 text-muted-foreground" />
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

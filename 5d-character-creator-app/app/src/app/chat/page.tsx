@@ -572,7 +572,7 @@ What would you like to create today?`,
     }, []);
 
     // Get current API key using utility (checks admin keys first)
-    const currentApiKey = getChatApiKey(apiConfig?.provider || 'anthropic');
+    const currentApiKey = getChatApiKey((apiConfig?.provider === 'openai' || apiConfig?.provider === 'anthropic') ? apiConfig.provider : 'anthropic');
     const hasApiKey = !!currentApiKey;
 
     // Restore Chat Session
