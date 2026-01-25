@@ -438,6 +438,7 @@ What would you like to create today?`,
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [dismissApiKeyBanner, setDismissApiKeyBanner] = useState(false);
+    const [isAdminMode, setIsAdminMode] = useState(false);
     const [showQuickActions, setShowQuickActions] = useState(true);
     const [showCommandTutorial, setShowCommandTutorial] = useState(false);
     const [activePersona, setActivePersona] = useState<string | null>(null);
@@ -573,8 +574,30 @@ What would you like to create today?`,
     }, []);
 
     // Get current API key using utility (checks admin keys first)
-    const currentApiKey = getChatApiKey((apiConfig?.provider === 'openai' || apiConfig?.provider === 'anthropic') ? apiConfig.provider : 'anthropic');
+    const provider = (apiConfig?.provider === 'openai' || apiConfig?.provider === 'anthropic') ? apiConfig.provider : 'anthropic';
+    const currentApiKey = getChatApiKey(provider);
     const hasApiKey = !!currentApiKey;
+    
+    // Note: hasAdminKeys state removed - we now check directly in render using getChatApiKey()
+    // This ensures the status indicator always uses the latest values from localStorage
+
+    // Check if admin mode is active
+    useEffect(() => {
+        const checkAdminMode = () => {
+            setIsAdminMode(typeof window !== 'undefined' && localStorage.getItem('5d-admin-mode') === 'true');
+        };
+        checkAdminMode();
+        // Listen for storage changes (in case admin mode is toggled in another tab)
+        if (typeof window !== 'undefined') {
+            window.addEventListener('storage', checkAdminMode);
+            // Also check periodically in case admin mode is toggled in same tab
+            const interval = setInterval(checkAdminMode, 1000);
+            return () => {
+                window.removeEventListener('storage', checkAdminMode);
+                clearInterval(interval);
+            };
+        }
+    }, []);
 
     // Restore Chat Session
     useEffect(() => {
@@ -745,6 +768,9 @@ Click **Generate** to create the document, or provide specific instructions for 
                     // Extract recent context for titling
                     const context = session.messages.slice(1, 6).map(m => `${m.role}: ${m.content}`).join('\n');
 
+                    // Check if admin mode is active
+                    const isAdminModeActive = typeof window !== 'undefined' && localStorage.getItem('5d-admin-mode') === 'true';
+
                     const response = await fetch('/api/chat', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -755,6 +781,7 @@ Click **Generate** to create the document, or provide specific instructions for 
                             ],
                             provider: apiConfig?.provider || 'anthropic',
                             apiKey: currentApiKey,
+                            isAdminMode: isAdminModeActive, // Send admin mode flag to API route
                         }),
                     });
 
@@ -1344,6 +1371,9 @@ What would you like to create today?`,
                 structuredContext.modeInstruction = modeInstruction;
             }
 
+            // Check if admin mode is active
+            const isAdminModeActive = typeof window !== 'undefined' && localStorage.getItem('5d-admin-mode') === 'true';
+
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1354,6 +1384,7 @@ What would you like to create today?`,
                     })),
                     provider: apiConfig?.provider || 'anthropic',
                     apiKey: currentApiKey,
+                    isAdminMode: isAdminModeActive, // Send admin mode flag to API route
                     // Pass structured context for API context budget management
                     ...structuredContext
                 }),
@@ -2432,8 +2463,42 @@ What would you like to create today?`,
             <header className="h-14 border-b border-border px-6 flex items-center justify-between glass-strong shrink-0">
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
-                        <div className={cn("w-2 h-2 rounded-full", hasApiKey ? "bg-emerald-400 animate-pulse" : "bg-amber-400")} />
-                        <span className="font-medium text-sm">{hasApiKey ? 'Connected' : 'Setup Required'}</span>
+                        {(() => {
+                            // Check admin mode and keys in real-time using utility function for consistency
+                            const adminModeActive = typeof window !== 'undefined' && localStorage.getItem('5d-admin-mode') === 'true';
+                            
+                            if (adminModeActive) {
+                                // Use the same utility function to check for admin keys
+                                const adminApiKey = getChatApiKey(provider);
+                                const adminHasKeys = !!adminApiKey && adminApiKey.trim().length > 0;
+                                
+                                if (adminHasKeys) {
+                                    return (
+                                        <>
+                                            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                            <span className="font-medium text-sm text-emerald-400">Admin Mode</span>
+                                        </>
+                                    );
+                                }
+                            }
+                            
+                            // Fall back to regular connection status
+                            if (hasApiKey) {
+                                return (
+                                    <>
+                                        <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                        <span className="font-medium text-sm text-emerald-400">Connected</span>
+                                    </>
+                                );
+                            } else {
+                                return (
+                                    <>
+                                        <div className="w-2 h-2 rounded-full bg-red-400" />
+                                        <span className="font-medium text-sm text-red-400">Setup Required</span>
+                                    </>
+                                );
+                            }
+                        })()}
                     </div>
                     <div className="h-4 w-px bg-border" />
 

@@ -299,6 +299,7 @@ export async function POST(req: Request) {
             messages,
             provider = 'anthropic',
             apiKey,
+            isAdminMode = false, // Flag indicating if admin mode is active
             // Structured context (optional - improves context budget management)
             linkedCharacter,
             linkedWorld,
@@ -340,9 +341,31 @@ export async function POST(req: Request) {
             }
         }
 
-        if (!apiKey) {
+        // Determine which API key to use
+        let finalApiKey = apiKey;
+        
+        // If admin mode is active, use environment variables (server-side keys)
+        if (isAdminMode) {
+            const adminKey = provider === 'openai' 
+                ? process.env.OPENAI_API_KEY 
+                : process.env.ANTHROPIC_API_KEY;
+            
+            if (adminKey && adminKey.trim().length > 0) {
+                finalApiKey = adminKey;
+                console.log('[Admin Mode] Using server-side API key from environment variables');
+            } else {
+                console.warn('[Admin Mode] Admin mode active but environment variable not set, falling back to client-provided key');
+                // Fall back to client-provided key if env var is not set
+            }
+        }
+
+        if (!finalApiKey || finalApiKey.trim().length === 0) {
             return new Response(
-                JSON.stringify({ error: 'API key is required. Please add your API key in Settings.' }),
+                JSON.stringify({ 
+                    error: isAdminMode 
+                        ? 'Admin mode is active but API keys are not configured in environment variables. Please set ANTHROPIC_API_KEY or OPENAI_API_KEY in your deployment environment.'
+                        : 'API key is required. Please add your API key in Settings.'
+                }),
                 { 
                     status: 400, 
                     headers: { 
@@ -357,10 +380,10 @@ export async function POST(req: Request) {
         let model;
         try {
             if (provider === 'openai') {
-                const openai = createOpenAI({ apiKey });
+                const openai = createOpenAI({ apiKey: finalApiKey });
                 model = openai('gpt-4o');
             } else {
-                const anthropic = createAnthropic({ apiKey });
+                const anthropic = createAnthropic({ apiKey: finalApiKey });
                 // Using Haiku as default - it's more reliable and cost-effective
                 // You can change this to 'claude-3-5-sonnet-20241022' if you have access
                 model = anthropic('claude-3-haiku-20240307');
