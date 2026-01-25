@@ -437,6 +437,7 @@ What would you like to create today?`,
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [dismissApiKeyBanner, setDismissApiKeyBanner] = useState(false);
     const [showQuickActions, setShowQuickActions] = useState(true);
     const [showCommandTutorial, setShowCommandTutorial] = useState(false);
     const [activePersona, setActivePersona] = useState<string | null>(null);
@@ -2697,19 +2698,27 @@ What would you like to create today?`,
 
             {/* Warnings ... */}
             {
-                !hasApiKey && (
+                !hasApiKey && !dismissApiKeyBanner && typeof window !== 'undefined' && localStorage.getItem('5d-admin-mode') !== 'true' && (
                     <div className="mx-6 mt-4 p-4 rounded-xl glass-card border-amber-500/20 bg-amber-500/5">
                         <div className="flex items-start gap-3">
                             <AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
                             <div className="flex-1">
                                 <p className="text-sm font-medium text-foreground mb-1">API Key Required</p>
                                 <p className="text-xs text-muted-foreground mb-3">Add your API key in Settings to start chatting with AI.</p>
-                                <Link href="/settings">
-                                    <Button size="sm" variant="outline" className="h-8 text-xs">
-                                        <Settings className="h-3.5 w-3.5 mr-1.5" /> Open Settings
-                                    </Button>
-                                </Link>
+                                <div className="flex items-center gap-2">
+                                    <Link href="/settings">
+                                        <Button size="sm" variant="outline" className="h-8 text-xs">
+                                            <Settings className="h-3.5 w-3.5 mr-1.5" /> Open Settings
+                                        </Button>
+                                    </Link>
+                                </div>
                             </div>
+                            <button
+                                onClick={() => setDismissApiKeyBanner(true)}
+                                className="text-muted-foreground hover:text-foreground p-1 rounded-full hover:bg-white/5 transition-colors shrink-0"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
                         </div>
                     </div>
                 )

@@ -83,6 +83,31 @@ export default function SettingsPage() {
         }
     }, []);
 
+    // Auto-test connection when admin mode becomes active
+    useEffect(() => {
+        if (isAdminMode) {
+            // Wait a bit longer to ensure admin keys are loaded
+            const timer = setTimeout(() => {
+                const adminKeys = localStorage.getItem('5d-api-keys-admin');
+                if (adminKeys) {
+                    try {
+                        const keys = JSON.parse(adminKeys);
+                        const savedConfig = localStorage.getItem('5d-api-config');
+                        const provider = savedConfig ? JSON.parse(savedConfig).provider || 'anthropic' : 'anthropic';
+                        const apiKey = provider === 'anthropic' ? (keys.anthropicKey || '') : (keys.openaiKey || '');
+                        if (apiKey) {
+                            handleTest();
+                        }
+                    } catch (e) {
+                        console.error('Failed to check admin keys:', e);
+                    }
+                }
+            }, 1500);
+            return () => clearTimeout(timer);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAdminMode]);
+
     const handleAdminLogin = async (skipModal = false) => {
         if (!skipModal && !adminPassword) {
             setAdminError('Please enter a password');
@@ -127,6 +152,22 @@ export default function SettingsPage() {
 
                 setShowAdminModal(false);
                 setAdminPassword('');
+                
+                // Auto-test connection after successful admin login (wait for keys to be stored)
+                setTimeout(() => {
+                    const adminKeys = localStorage.getItem('5d-api-keys-admin');
+                    if (adminKeys) {
+                        try {
+                            const keys = JSON.parse(adminKeys);
+                            const apiKey = config.provider === 'anthropic' ? (keys.anthropicKey || '') : (keys.openaiKey || '');
+                            if (apiKey) {
+                                handleTest();
+                            }
+                        } catch (e) {
+                            console.error('Failed to check admin keys:', e);
+                        }
+                    }
+                }, 800);
             } else {
                 setAdminError(data.error || 'Invalid password');
             }
@@ -193,6 +234,11 @@ export default function SettingsPage() {
         }
 
         if (!apiKey) {
+            // In admin mode, don't show error if keys aren't loaded yet
+            if (isAdminMode) {
+                setTesting(false);
+                return;
+            }
             setTestResult('error');
             setTestError('Please enter an API key first');
             setTesting(false);
@@ -556,7 +602,7 @@ export default function SettingsPage() {
                     {isAdminMode && (
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                             <Lock className="h-4 w-4" />
-                            <span>Admin mode: API keys are managed from .env file</span>
+                            <span>Admin mode active</span>
                         </div>
                     )}
 
@@ -576,7 +622,7 @@ export default function SettingsPage() {
                         </div>
                     )}
 
-                    {testResult === 'error' && (
+                    {testResult === 'error' && !isAdminMode && (
                         <div className="flex flex-col gap-2 text-red-400 text-sm">
                             <div className="flex items-center gap-2">
                                 <AlertCircle className="h-4 w-4" />
