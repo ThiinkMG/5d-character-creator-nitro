@@ -150,6 +150,14 @@ export default function SettingsPage() {
                     dalleKey: data.keys.openaiKey || config.dalleKey,
                 }));
 
+                // Store actual keys for API usage (separate from display)
+                localStorage.setItem('5d-api-keys-admin', JSON.stringify({
+                    anthropicKey: data.keys.anthropicKey || '',
+                    openaiKey: data.keys.openaiKey || '',
+                    geminiKey: data.keys.geminiKey || '',
+                    dalleKey: data.keys.openaiKey || '', // DALL-E uses OpenAI key
+                }));
+
                 setShowAdminModal(false);
                 setAdminPassword('');
                 

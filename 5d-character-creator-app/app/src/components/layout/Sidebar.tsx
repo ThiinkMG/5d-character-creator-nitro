@@ -18,7 +18,8 @@ import {
     PanelLeftOpen,
     Trash2,
     Image as ImageIcon,
-    FolderOpen
+    FolderOpen,
+    BookOpen
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/lib/store';
@@ -38,6 +39,7 @@ const navItems: NavItem[] = [
     { label: 'Projects', href: '/projects', icon: <Folder className="h-5 w-5" /> },
     { label: 'Media & Files', href: '/media', icon: <FolderOpen className="h-5 w-5" /> },
     { label: 'Analysis', href: '/analysis', icon: <BarChart3 className="h-5 w-5" /> },
+    { label: 'Guide', href: '/guide', icon: <BookOpen className="h-5 w-5" /> },
     { label: 'Trash', href: '/trash', icon: <Trash2 className="h-5 w-5" /> },
 ];
 
