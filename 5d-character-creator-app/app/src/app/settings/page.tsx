@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Key, Eye, EyeOff, Check, AlertCircle, Sparkles, Cpu, Image as ImageIcon, Wand2, Globe } from 'lucide-react';
+import { Key, Eye, EyeOff, Check, AlertCircle, Sparkles, Cpu, Image as ImageIcon, Wand2, Globe, Lock, LogOut, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -36,11 +36,36 @@ export default function SettingsPage() {
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
     const [testError, setTestError] = useState<string | null>(null);
+    
+    // Admin mode state
+    const [isAdminMode, setIsAdminMode] = useState(false);
+    const [showAdminModal, setShowAdminModal] = useState(false);
+    const [adminPassword, setAdminPassword] = useState('');
+    const [adminError, setAdminError] = useState<string | null>(null);
+    const [adminLoading, setAdminLoading] = useState(false);
 
     // Load config from localStorage on mount
     useEffect(() => {
         const savedConfig = localStorage.getItem('5d-api-config');
-        if (savedConfig) {
+        const adminMode = localStorage.getItem('5d-admin-mode') === 'true';
+        
+        if (adminMode && savedConfig) {
+            // Admin mode is active - restore state but keys are masked
+            setIsAdminMode(true);
+            try {
+                const parsed = JSON.parse(savedConfig);
+                setConfig({
+                    provider: parsed.provider || 'anthropic',
+                    anthropicKey: parsed.anthropicKey ? '••••••••••••' : '',
+                    openaiKey: parsed.openaiKey ? '••••••••••••' : '',
+                    geminiKey: parsed.geminiKey ? '••••••••••••' : '',
+                    dalleKey: parsed.dalleKey ? '••••••••••••' : '',
+                    imageProvider: parsed.imageProvider || 'free',
+                });
+            } catch (e) {
+                console.error('Failed to parse saved config:', e);
+            }
+        } else if (savedConfig) {
             try {
                 setConfig({
                     // Defaults
@@ -58,6 +83,88 @@ export default function SettingsPage() {
         }
     }, []);
 
+    const handleAdminLogin = async (skipModal = false) => {
+        if (!skipModal && !adminPassword) {
+            setAdminError('Please enter a password');
+            return;
+        }
+
+        setAdminLoading(true);
+        setAdminError(null);
+
+        try {
+            const response = await fetch('/api/admin/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: adminPassword || 'dummy' })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                // Set admin mode
+                setIsAdminMode(true);
+                localStorage.setItem('5d-admin-mode', 'true');
+                
+                // Load keys from .env
+                setConfig(prev => ({
+                    ...prev,
+                    anthropicKey: data.keys.anthropicKey || prev.anthropicKey,
+                    openaiKey: data.keys.openaiKey || prev.openaiKey,
+                    geminiKey: data.keys.geminiKey || prev.geminiKey,
+                    dalleKey: data.keys.openaiKey || prev.dalleKey, // DALL-E uses OpenAI key
+                }));
+
+                // Save to localStorage (but keys will be masked)
+                localStorage.setItem('5d-api-config', JSON.stringify({
+                    provider: config.provider,
+                    imageProvider: config.imageProvider,
+                    anthropicKey: data.keys.anthropicKey || config.anthropicKey,
+                    openaiKey: data.keys.openaiKey || config.openaiKey,
+                    geminiKey: data.keys.geminiKey || config.geminiKey,
+                    dalleKey: data.keys.openaiKey || config.dalleKey,
+                }));
+
+                setShowAdminModal(false);
+                setAdminPassword('');
+            } else {
+                setAdminError(data.error || 'Invalid password');
+            }
+        } catch (error) {
+            console.error('Admin login error:', error);
+            setAdminError('Failed to verify password');
+        } finally {
+            setAdminLoading(false);
+        }
+    };
+
+    const handleAdminLogout = () => {
+        if (confirm('Are you sure you want to log out of admin mode? This will clear all API key entries.')) {
+            setIsAdminMode(false);
+            localStorage.removeItem('5d-admin-mode');
+            localStorage.removeItem('5d-api-keys-admin'); // Remove actual keys
+            
+            // Clear all API keys
+            setConfig({
+                provider: 'anthropic',
+                anthropicKey: '',
+                openaiKey: '',
+                geminiKey: '',
+                dalleKey: '',
+                imageProvider: 'free',
+            });
+            
+            localStorage.setItem('5d-api-config', JSON.stringify({
+                provider: 'anthropic',
+                anthropicKey: '',
+                openaiKey: '',
+                geminiKey: '',
+                dalleKey: '',
+                imageProvider: 'free',
+            }));
+        }
+    };
+
     const handleSave = () => {
         localStorage.setItem('5d-api-config', JSON.stringify(config));
         setSaved(true);
@@ -69,7 +176,21 @@ export default function SettingsPage() {
         setTestResult(null);
         setTestError(null);
 
-        const apiKey = config.provider === 'anthropic' ? config.anthropicKey : config.openaiKey;
+        // Get actual API key (from admin keys if in admin mode, otherwise from config)
+        let apiKey = '';
+        if (isAdminMode) {
+            const adminKeys = localStorage.getItem('5d-api-keys-admin');
+            if (adminKeys) {
+                try {
+                    const keys = JSON.parse(adminKeys);
+                    apiKey = config.provider === 'anthropic' ? (keys.anthropicKey || '') : (keys.openaiKey || '');
+                } catch (e) {
+                    console.error('Failed to parse admin keys:', e);
+                }
+            }
+        } else {
+            apiKey = config.provider === 'anthropic' ? config.anthropicKey : config.openaiKey;
+        }
 
         if (!apiKey) {
             setTestResult('error');
@@ -153,9 +274,32 @@ export default function SettingsPage() {
     return (
         <div className="min-h-screen p-8 lg:p-12">
             <header className="mb-12">
-                <div className="flex items-center gap-3 mb-2">
-                    <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-primary to-primary/40" />
-                    <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
+                <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-3">
+                        <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-primary to-primary/40" />
+                        <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        {isAdminMode ? (
+                            <Button
+                                onClick={handleAdminLogout}
+                                variant="outline"
+                                className="glass text-red-400 hover:text-red-300 hover:bg-red-500/10 border-red-500/20"
+                            >
+                                <LogOut className="h-4 w-4 mr-2" />
+                                Log Out Admin
+                            </Button>
+                        ) : (
+                            <Button
+                                onClick={() => setShowAdminModal(true)}
+                                variant="outline"
+                                className="glass"
+                            >
+                                <Lock className="h-4 w-4 mr-2" />
+                                Admin Login
+                            </Button>
+                        )}
+                    </div>
                 </div>
                 <p className="text-muted-foreground text-base ml-5">
                     Configure your AI providers and preferences
@@ -216,17 +360,25 @@ export default function SettingsPage() {
                                 <Input
                                     type={showAnthropicKey ? 'text' : 'password'}
                                     value={config.anthropicKey}
-                                    onChange={(e) => setConfig({ ...config, anthropicKey: e.target.value })}
-                                    placeholder="sk-ant-..."
-                                    className="pr-10 bg-background/50"
+                                    onChange={(e) => !isAdminMode && setConfig({ ...config, anthropicKey: e.target.value })}
+                                    placeholder={isAdminMode ? "••••••••••••" : "sk-ant-..."}
+                                    className={cn("pr-10 bg-background/50", isAdminMode && "opacity-50 cursor-not-allowed")}
+                                    disabled={isAdminMode}
                                 />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowAnthropicKey(!showAnthropicKey)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                                >
-                                    {showAnthropicKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                </button>
+                                {!isAdminMode && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAnthropicKey(!showAnthropicKey)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                    >
+                                        {showAnthropicKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    </button>
+                                )}
+                                {isAdminMode && (
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                        <Lock className="h-4 w-4 text-muted-foreground" />
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -245,17 +397,25 @@ export default function SettingsPage() {
                                 <Input
                                     type={showOpenaiKey ? 'text' : 'password'}
                                     value={config.openaiKey}
-                                    onChange={(e) => setConfig({ ...config, openaiKey: e.target.value })}
-                                    placeholder="sk-..."
-                                    className="pr-10 bg-background/50"
+                                    onChange={(e) => !isAdminMode && setConfig({ ...config, openaiKey: e.target.value })}
+                                    placeholder={isAdminMode ? "••••••••••••" : "sk-..."}
+                                    className={cn("pr-10 bg-background/50", isAdminMode && "opacity-50 cursor-not-allowed")}
+                                    disabled={isAdminMode}
                                 />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowOpenaiKey(!showOpenaiKey)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                                >
-                                    {showOpenaiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                </button>
+                                {!isAdminMode && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowOpenaiKey(!showOpenaiKey)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                    >
+                                        {showOpenaiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    </button>
+                                )}
+                                {isAdminMode && (
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                        <Lock className="h-4 w-4 text-muted-foreground" />
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -318,17 +478,25 @@ export default function SettingsPage() {
                                 <Input
                                     type={showGeminiKey ? 'text' : 'password'}
                                     value={config.geminiKey}
-                                    onChange={(e) => setConfig({ ...config, geminiKey: e.target.value })}
-                                    placeholder="AIza..."
-                                    className="pr-10 bg-background/50"
+                                    onChange={(e) => !isAdminMode && setConfig({ ...config, geminiKey: e.target.value })}
+                                    placeholder={isAdminMode ? "••••••••••••" : "AIza..."}
+                                    className={cn("pr-10 bg-background/50", isAdminMode && "opacity-50 cursor-not-allowed")}
+                                    disabled={isAdminMode}
                                 />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowGeminiKey(!showGeminiKey)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                                >
-                                    {showGeminiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                </button>
+                                {!isAdminMode && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowGeminiKey(!showGeminiKey)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                    >
+                                        {showGeminiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    </button>
+                                )}
+                                {isAdminMode && (
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                        <Lock className="h-4 w-4 text-muted-foreground" />
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -365,16 +533,24 @@ export default function SettingsPage() {
 
                 {/* Actions */}
                 <div className="flex items-center gap-4">
-                    <Button onClick={handleSave} className="premium-button">
-                        {saved ? (
-                            <>
-                                <Check className="h-4 w-4 mr-2" />
-                                Saved!
-                            </>
-                        ) : (
-                            'Save Settings'
-                        )}
-                    </Button>
+                    {!isAdminMode && (
+                        <Button onClick={handleSave} className="premium-button">
+                            {saved ? (
+                                <>
+                                    <Check className="h-4 w-4 mr-2" />
+                                    Saved!
+                                </>
+                            ) : (
+                                'Save Settings'
+                            )}
+                        </Button>
+                    )}
+                    {isAdminMode && (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Lock className="h-4 w-4" />
+                            <span>Admin mode: API keys are managed from .env file</span>
+                        </div>
+                    )}
 
                     <Button
                         variant="outline"
@@ -430,6 +606,91 @@ export default function SettingsPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Admin Login Modal */}
+            {showAdminModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowAdminModal(false)}>
+                    <div
+                        className="bg-[#0A0A0F] border border-white/10 rounded-2xl w-full max-w-md animate-in zoom-in-95 duration-200 shadow-2xl"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="p-6 border-b border-white/5">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 rounded-lg bg-primary/10">
+                                        <Lock className="h-5 w-5 text-primary" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-xl font-bold text-white">Admin Login</h3>
+                                        <p className="text-sm text-muted-foreground">Enter admin password to use API keys from .env</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setShowAdminModal(false);
+                                        setAdminPassword('');
+                                        setAdminError(null);
+                                    }}
+                                    className="text-muted-foreground hover:text-white p-2 rounded-full hover:bg-white/5 transition-colors"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-foreground mb-2">
+                                    Password
+                                </label>
+                                <Input
+                                    type="password"
+                                    value={adminPassword}
+                                    onChange={(e) => {
+                                        setAdminPassword(e.target.value);
+                                        setAdminError(null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && !adminLoading) {
+                                            handleAdminLogin();
+                                        }
+                                    }}
+                                    placeholder="Enter admin password"
+                                    className="bg-background/50"
+                                    autoFocus
+                                />
+                                {adminError && (
+                                    <p className="text-sm text-red-400 mt-2 flex items-center gap-2">
+                                        <AlertCircle className="h-4 w-4" />
+                                        {adminError}
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className="flex items-center gap-3 pt-2">
+                                <Button
+                                    onClick={() => handleAdminLogin()}
+                                    disabled={adminLoading || !adminPassword}
+                                    className="premium-button flex-1"
+                                >
+                                    {adminLoading ? 'Verifying...' : 'Login'}
+                                </Button>
+                                <Button
+                                    onClick={() => {
+                                        setShowAdminModal(false);
+                                        setAdminPassword('');
+                                        setAdminError(null);
+                                    }}
+                                    variant="outline"
+                                    className="glass"
+                                >
+                                    Cancel
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

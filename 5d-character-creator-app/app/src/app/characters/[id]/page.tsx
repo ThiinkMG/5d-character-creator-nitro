@@ -1137,7 +1137,7 @@ const ContentSectionBlock = ({
                                 onRejectSuggestion={() => onRejectSuggestion?.(section.fieldId)}
                             />
                         ) : (
-                            <MarkdownProse content={section.content} className="text-white/80" />
+                            <MarkdownProse content={section.content} className="text-white/80" hideMentionSymbol={true} />
                         )}
                     </div>
                 ) : null}
@@ -1244,6 +1244,7 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
     const [headerDragPosition, setHeaderDragPosition] = useState<{ x: number; y: number } | null>(null);
     const [headerDragStart, setHeaderDragStart] = useState<{ x: number; y: number } | null>(null);
     const headerImageRef = useRef<HTMLDivElement>(null);
+    const initialDragPositionRef = useRef<{ x: number; y: number } | null>(null); // Store position at drag start
     
     // Store for project linking
     const { projects, getProjectForCharacter, addCharacterToProject, removeCharacterFromProject } = useStore();
@@ -1312,42 +1313,58 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
 
-    // Header image drag handling
+    // Header image drag handling - works like background-position adjustment
     useEffect(() => {
-        if (!isRepositioningHeader || !headerDragStart) return;
+        if (!isRepositioningHeader || !headerDragStart || !headerImageRef.current) return;
 
         const handleMouseMove = (e: MouseEvent) => {
-            if (!headerDragStart) return;
+            if (!headerDragStart || !headerImageRef.current || !initialDragPositionRef.current) return;
             e.preventDefault();
             e.stopPropagation();
-            
-            // Calculate new position: mouse position minus the offset stored in dragStart
-            const newX = e.clientX - headerDragStart.x;
-            const newY = e.clientY - headerDragStart.y;
-            
-            // Constrain movement (allow some overflow for repositioning)
-            const maxOffset = 200; // Allow up to 200px movement in any direction
-            setHeaderDragPosition({
-                x: Math.max(-maxOffset, Math.min(maxOffset, newX)),
-                y: Math.max(-maxOffset, Math.min(maxOffset, newY))
-            });
+
+            // Get container dimensions
+            const container = headerImageRef.current;
+            const rect = container.getBoundingClientRect();
+
+            // Calculate current mouse position as percentage of container
+            const mouseXPercent = ((e.clientX - rect.left) / rect.width) * 100;
+            const mouseYPercent = ((e.clientY - rect.top) / rect.height) * 100;
+
+            // Get the INITIAL position when drag started (from ref, doesn't change during drag)
+            const startPos = initialDragPositionRef.current;
+
+            // Calculate initial click position as percentage
+            const startXPercent = (headerDragStart.x / rect.width) * 100;
+            const startYPercent = (headerDragStart.y / rect.height) * 100;
+
+            // Calculate how far the mouse has moved from the initial click
+            const deltaX = mouseXPercent - startXPercent;
+            const deltaY = mouseYPercent - startYPercent;
+
+            // Adjust the object-position: move in opposite direction of mouse movement
+            // (if mouse moves right, we want to show more of the left side, so decrease x%)
+            const newX = Math.max(0, Math.min(100, startPos.x - deltaX));
+            const newY = Math.max(0, Math.min(100, startPos.y - deltaY));
+
+            setHeaderDragPosition({ x: newX, y: newY });
         };
 
         const handleMouseUp = (e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
             setHeaderDragStart(null);
+            initialDragPositionRef.current = null;
         };
 
         // Use capture phase to ensure we catch events
         window.addEventListener('mousemove', handleMouseMove, { passive: false, capture: true });
         window.addEventListener('mouseup', handleMouseUp, { passive: false, capture: true });
-        
+
         return () => {
             window.removeEventListener('mousemove', handleMouseMove, { capture: true });
             window.removeEventListener('mouseup', handleMouseUp, { capture: true });
         };
-    }, [isRepositioningHeader, headerDragStart, headerDragPosition, character?.headerImagePosition]);
+    }, [isRepositioningHeader, headerDragStart]);
 
     // Search functionality - search within character content (must be before early return)
     const searchableContent = React.useMemo(() => {
@@ -2003,15 +2020,17 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
                                         isRepositioningHeader && "cursor-move"
                                     )}
                                     onMouseDown={(e) => {
-                                        if (isEditMode && isRepositioningHeader) {
+                                        if (isEditMode && isRepositioningHeader && headerImageRef.current) {
                                             e.preventDefault();
                                             e.stopPropagation();
-                                            // Store the initial mouse position and current image position
-                                            const currentPosition = headerDragPosition || character.headerImagePosition || { x: 0, y: 0 };
+                                            // Store the initial click position relative to the container
+                                            const rect = headerImageRef.current.getBoundingClientRect();
                                             setHeaderDragStart({
-                                                x: e.clientX - currentPosition.x,
-                                                y: e.clientY - currentPosition.y
+                                                x: e.clientX - rect.left,
+                                                y: e.clientY - rect.top
                                             });
+                                            // Store the initial object-position at drag start (doesn't change during drag)
+                                            initialDragPositionRef.current = headerDragPosition || character.headerImagePosition || { x: 50, y: 50 };
                                         }
                                     }}
                                     style={{
@@ -2022,20 +2041,21 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
                                         src={character.imageUrl}
                                         alt={character.name}
                                         className={cn(
-                                            "w-full h-full object-cover opacity-90 transition-transform duration-200",
+                                            "w-full h-full object-cover opacity-90",
                                             isRepositioningHeader && "select-none"
                                         )}
                                         style={{
-                                            transform: isRepositioningHeader && headerDragPosition
-                                                ? `translate(${headerDragPosition.x}px, ${headerDragPosition.y}px)`
+                                            // Scale up image to give more room for repositioning
+                                            transform: (isRepositioningHeader || character.headerImagePosition)
+                                                ? `scale(1.5)`
+                                                : undefined,
+                                            // Use object-position for focal point adjustment (percentages)
+                                            // Default is 50% 50% (centered), values range from 0-100%
+                                            objectPosition: headerDragPosition
+                                                ? `${headerDragPosition.x}% ${headerDragPosition.y}%`
                                                 : character.headerImagePosition
-                                                    ? `translate(${character.headerImagePosition.x}px, ${character.headerImagePosition.y}px)`
-                                                    : undefined,
-                                            objectPosition: isRepositioningHeader && headerDragPosition
-                                                ? 'center'
-                                                : character.headerImagePosition
-                                                    ? 'center'
-                                                    : 'center',
+                                                    ? `${character.headerImagePosition.x}% ${character.headerImagePosition.y}%`
+                                                    : '50% 50%',
                                             pointerEvents: isRepositioningHeader ? 'none' : 'auto'
                                         }}
                                         draggable={false}
@@ -2065,12 +2085,11 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
                     {/* Reposition Mode Overlay */}
                     {isEditMode && isRepositioningHeader && (
                         <>
-                            {/* Semi-transparent overlay that allows pointer events to pass through */}
-                            <div 
-                                className="absolute inset-0 z-30 bg-black/20 pointer-events-none"
-                                style={{ backdropFilter: 'blur(2px)' }}
+                            {/* Subtle border indicator - no darkening overlay */}
+                            <div
+                                className="absolute inset-0 z-30 pointer-events-none border-4 border-primary/50 rounded-sm"
                             />
-                            
+
                             {/* Instructions and controls - positioned to not block the image */}
                             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 pointer-events-auto">
                                 <div className="bg-black/90 backdrop-blur-md rounded-xl p-4 border border-white/20 shadow-2xl">
@@ -2247,7 +2266,8 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
                                         <Button
                                             onClick={() => {
                                                 setIsRepositioningHeader(true);
-                                                setHeaderDragPosition(character.headerImagePosition || { x: 0, y: 0 });
+                                                // Use percentage-based position (50% = centered)
+                                                setHeaderDragPosition(character.headerImagePosition || { x: 50, y: 50 });
                                             }}
                                             size="sm"
                                             variant="outline"
@@ -2311,6 +2331,7 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
                                     <MarkdownProse
                                         content={character.coreConcept || "No core concept defined. Click Edit to begin your character's journey."}
                                         className="prose-lg md:prose-xl text-white/90 font-serif leading-loose tracking-wide"
+                                        hideMentionSymbol={true}
                                     />
                                 </div>
                             )}
@@ -2334,7 +2355,7 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
                                     onClick={() => setViewMode('reading')}
                                     className={cn(
                                         "px-4 py-2 rounded-md text-sm font-medium transition-all",
-                                        viewMode === 'reading' ? "bg-primary text-white" : "text-white/60 hover:text-white"
+                                        "text-white/60 hover:text-white"
                                     )}
                                 >
                                     Reading View
@@ -2343,7 +2364,7 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
                                     onClick={() => setViewMode('prose')}
                                     className={cn(
                                         "px-4 py-2 rounded-md text-sm font-medium transition-all",
-                                        viewMode === 'prose' ? "bg-primary text-white" : "text-white/60 hover:text-white"
+                                        "text-white/60 hover:text-white"
                                     )}
                                 >
                                     Editor
@@ -2352,7 +2373,7 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
                                     onClick={() => setViewMode('structured')}
                                     className={cn(
                                         "px-4 py-2 rounded-md text-sm font-medium transition-all",
-                                        viewMode === 'structured' ? "bg-primary text-white" : "text-white/60 hover:text-white"
+                                        "text-white/60 hover:text-white"
                                     )}
                                 >
                                     Structured View
@@ -2361,7 +2382,7 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
                                     onClick={() => setViewMode('docs')}
                                     className={cn(
                                         "px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2",
-                                        viewMode === 'docs' ? "bg-primary text-white" : "text-white/60 hover:text-white"
+                                        "bg-primary text-white"
                                     )}
                                 >
                                     <FileText className="w-4 h-4" />
@@ -2479,7 +2500,7 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
                                         onClick={() => setViewMode('docs')}
                                         className={cn(
                                             "px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2",
-                                            viewMode === 'docs' ? "bg-primary text-white" : "text-white/60 hover:text-white"
+                                            "text-white/60 hover:text-white"
                                         )}
                                     >
                                         <FileText className="w-4 h-4" />
@@ -2651,8 +2672,8 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
                                                 if (section.type === 'gallery') {
                                                     const displayType = section.galleryDisplayType || 'grid';
                                                     const allMedia = [
-                                                        ...(section.galleryImages?.map((url, idx) => ({ type: 'image' as const, url, idx })) || []),
-                                                        ...(section.galleryVideos?.map((url, idx) => ({ type: 'video' as const, url, idx: idx + (section.galleryImages?.length || 0) })) || [])
+                                                        ...(section.galleryImages?.map((url: string, idx: number) => ({ type: 'image' as const, url, idx })) || []),
+                                                        ...(section.galleryVideos?.map((url: string, idx: number) => ({ type: 'video' as const, url, idx: idx + (section.galleryImages?.length || 0) })) || [])
                                                     ];
 
                                                     const renderGallery = () => {
@@ -3063,10 +3084,33 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
                 onGenerate={async (prompt, provider) => {
                     setPendingHeaderImageAction('generate');
                     try {
-                        await handleGenerateImage(prompt, provider);
+                        // Get API keys from localStorage
+                        const savedConfig = typeof window !== 'undefined'
+                            ? JSON.parse(localStorage.getItem('5d-api-config') || '{}')
+                            : {};
+
+                        const response = await fetch('/api/generate-image', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                ...(savedConfig.geminiKey && { 'x-gemini-key': savedConfig.geminiKey }),
+                                ...(savedConfig.openaiKey && { 'x-openai-key': savedConfig.openaiKey }),
+                                ...(savedConfig.dalleKey && { 'x-openai-key': savedConfig.dalleKey }),
+                            },
+                            body: JSON.stringify({ prompt, provider })
+                        });
+
+                        const data = await response.json();
+
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Image generation failed');
+                        }
+
                         setGeneratorModalOpen(false);
+                        return data.imageUrl;
                     } catch (error) {
                         setPendingHeaderImageAction(null);
+                        throw error;
                     }
                 }}
                 onUpload={(dataUrl) => {
@@ -3109,8 +3153,10 @@ export default function CharacterProfilePage({ params: paramsPromise }: { params
                         setPendingImageUrl(data.imageUrl);
                         setInfoboxImageModalOpen(false);
                         setChangeHeroDialogOpen(true);
+                        return data.imageUrl;
                     } catch (error) {
                         console.error('Failed to generate image:', error);
+                        throw error;
                     }
                 }}
                 onUpload={(dataUrl) => {

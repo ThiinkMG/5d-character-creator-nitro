@@ -71,7 +71,7 @@ interface CustomSectionProps {
     onMoveDown?: () => void;
     onOpenAIModal?: (fieldLabel: string, handler: (content: string) => void) => void;
     onAddSectionAfter?: (type: 'text' | 'gallery') => void;
-    onGenerateImage?: (prompt: string, provider: ImageProvider) => Promise<void>;
+    onGenerateImage?: (prompt: string, provider: ImageProvider, sectionId?: string) => Promise<void>;
     isFirst?: boolean;
     isLast?: boolean;
     viewMode?: 'prose' | 'structured' | 'reading';
@@ -144,6 +144,15 @@ export function CustomSection({
         });
         setCropperOpen(false);
         setTempImageUrl(null);
+    };
+
+    const getSizeClass = (size?: 'small' | 'medium' | 'large') => {
+        switch (size) {
+            case 'small': return 'max-w-xs';
+            case 'medium': return 'max-w-md';
+            case 'large': return 'max-w-2xl';
+            default: return 'max-w-md';
+        }
     };
 
     const getAspectRatioClass = (ratio: string) => {
@@ -441,7 +450,7 @@ export function CustomSection({
                                                         onClick={() => {
                                                             if (section.galleryItems && section.galleryItems.length > 0) {
                                                                 const itemToDelete = section.galleryItems.find((_, i) => {
-                                                                    const sorted = [...section.galleryItems].sort((a, b) => a.order - b.order);
+                                                                    const sorted = [...(section.galleryItems || [])].sort((a, b) => a.order - b.order);
                                                                     return i === item.idx;
                                                                 });
                                                                 if (itemToDelete) {
@@ -554,7 +563,7 @@ export function CustomSection({
                                                         onClick={() => {
                                                             if (section.galleryItems && section.galleryItems.length > 0) {
                                                                 const itemToDelete = section.galleryItems.find((_, i) => {
-                                                                    const sorted = [...section.galleryItems].sort((a, b) => a.order - b.order);
+                                                                    const sorted = [...(section.galleryItems || [])].sort((a, b) => a.order - b.order);
                                                                     return i === item.idx;
                                                                 });
                                                                 if (itemToDelete) {
@@ -671,7 +680,7 @@ export function CustomSection({
                                                         onClick={() => {
                                                             if (section.galleryItems && section.galleryItems.length > 0) {
                                                                 const itemToDelete = section.galleryItems.find((_, i) => {
-                                                                    const sorted = [...section.galleryItems].sort((a, b) => a.order - b.order);
+                                                                    const sorted = [...(section.galleryItems || [])].sort((a, b) => a.order - b.order);
                                                                     return i === item.idx;
                                                                 });
                                                                 if (itemToDelete) {
@@ -806,16 +815,11 @@ export function CustomSection({
                                     >
                                     <img
                                         src={section.attachedImage.url}
-                                        alt={section.attachedImage.altText || `${section.title} image`}
+                                        alt={`${section.title} image`}
                                         className="w-full h-full object-cover"
                                     />
                                 </div>
-                                {/* Caption Display */}
-                                {section.attachedImage.caption && (
-                                    <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 to-transparent">
-                                        <p className="text-sm text-white">{section.attachedImage.caption}</p>
-                                    </div>
-                                )}
+                                {/* Caption Display - removed as caption is not in type */}
                                 {isEditMode && (
                                         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/image:opacity-100 transition-opacity">
                                             <div className="absolute top-2 right-2 flex flex-col gap-2">
@@ -908,7 +912,7 @@ export function CustomSection({
                                 multiline
                                 as="div"
                                 className="text-base leading-relaxed text-white/85"
-                                renderView={(val) => <MarkdownProse content={val} className="text-white/85 prose-p:my-2 prose-headings:mt-4 prose-headings:mb-2 prose-headings:text-white/90" />}
+                                renderView={(val) => <MarkdownProse content={val} className="text-white/85 prose-p:my-2 prose-headings:mt-4 prose-headings:mb-2 prose-headings:text-white/90" hideMentionSymbol={true} />}
                             />
                         ) : (
                             <EditableField
@@ -961,10 +965,13 @@ export function CustomSection({
                         if (onGenerateImage) {
                             try {
                                 await onGenerateImage(prompt, provider, section.id);
+                                return null; // Return null as onGenerateImage doesn't return a value
                             } catch (error) {
                                 console.error('Failed to generate image:', error);
+                                throw error;
                             }
                         }
+                        return null;
                     }}
                     onUpload={(dataUrl) => {
                         const currentItems = section.galleryItems || [];
@@ -1026,7 +1033,7 @@ const GalleryManagementPane = ({
     onClose: () => void;
     section: CustomSectionData;
     onUpdate: (id: string, updates: Partial<CustomSectionData>) => void;
-    onGenerateImage?: (prompt: string, provider: ImageProvider) => Promise<void>;
+    onGenerateImage?: (prompt: string, provider: ImageProvider, sectionId?: string) => Promise<void>;
 }) => {
     const [draggedItem, setDraggedItem] = useState<number | null>(null);
     const [editingItemId, setEditingItemId] = useState<string | null>(null);

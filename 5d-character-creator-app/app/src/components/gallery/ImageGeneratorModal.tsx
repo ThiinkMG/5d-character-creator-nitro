@@ -10,7 +10,7 @@ import { ImageProvider } from '@/types/image-config';
 interface ImageGeneratorModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onGenerate: (prompt: string, provider: ImageProvider) => Promise<void>;
+    onGenerate: (prompt: string, provider: ImageProvider) => Promise<string | null>; // Returns image URL
     onUpload?: (dataUrl: string) => void;
     itemName?: string;
     initialMode?: 'generate' | 'upload';
@@ -30,13 +30,18 @@ export function ImageGeneratorModal({ isOpen, onClose, onGenerate, onUpload, ite
     React.useEffect(() => {
         if (isOpen) {
             setMode(initialMode);
+            setGenerationError(null);
+            setGeneratedPreview(null);
+            setPrompt('');
         }
     }, [isOpen, initialMode]);
     const [prompt, setPrompt] = useState('');
     const [selectedProvider, setSelectedProvider] = useState<ImageProvider>('free');
     const [isGenerating, setIsGenerating] = useState(false);
+    const [generationError, setGenerationError] = useState<string | null>(null);
     const [dragActive, setDragActive] = useState(false);
     const [uploadPreview, setUploadPreview] = useState<string | null>(null);
+    const [generatedPreview, setGeneratedPreview] = useState<string | null>(null);
 
     // Load config from localStorage
     const savedConfig = typeof window !== 'undefined'
@@ -74,13 +79,30 @@ export function ImageGeneratorModal({ isOpen, onClose, onGenerate, onUpload, ite
     const handleGenerate = async () => {
         if (!prompt.trim()) return;
         setIsGenerating(true);
+        setGenerationError(null);
+        setGeneratedPreview(null);
         try {
-            await onGenerate(prompt, selectedProvider);
-            onClose();
+            const imageUrl = await onGenerate(prompt, selectedProvider);
+            if (imageUrl) {
+                setGeneratedPreview(imageUrl);
+            } else {
+                setGenerationError('Image generation succeeded but no image URL was returned.');
+            }
         } catch (error) {
             console.error('Generation failed:', error);
+            setGenerationError(error instanceof Error ? error.message : 'Failed to generate image. Please try again.');
         } finally {
             setIsGenerating(false);
+        }
+    };
+
+    const handleUseGeneratedImage = () => {
+        if (generatedPreview && onUpload) {
+            onUpload(generatedPreview);
+            onClose();
+            // Reset state
+            setGeneratedPreview(null);
+            setPrompt('');
         }
     };
 
@@ -116,12 +138,23 @@ export function ImageGeneratorModal({ isOpen, onClose, onGenerate, onUpload, ite
     if (!isOpen) return null;
 
     const modalContent = (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+        <div 
+            className="fixed inset-0 z-[9999] flex items-center justify-center"
+        >
             {/* Backdrop */}
-            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
+            <div
+                className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+                onClick={(e) => {
+                    if (e.target === e.currentTarget) {
+                        onClose();
+                    }
+                }}
+            />
 
             {/* Modal */}
-            <div className="relative w-full max-w-2xl mx-4 rounded-2xl overflow-hidden glass-card border border-white/10">
+            <div 
+                className="relative w-full max-w-[90vw] sm:max-w-4xl mx-4 rounded-2xl overflow-hidden glass-card border border-white/10 z-10"
+            >
                 {/* Header */}
                 <div className="p-6 border-b border-white/5 flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -137,8 +170,15 @@ export function ImageGeneratorModal({ isOpen, onClose, onGenerate, onUpload, ite
                             )}
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
-                        <X className="w-5 h-5 text-muted-foreground" />
+                    <button 
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onClose();
+                        }} 
+                        className="p-2 hover:bg-red-500/10 hover:text-red-400 text-muted-foreground rounded-lg transition-colors"
+                        title="Close"
+                    >
+                        <X className="w-4 h-4" />
                     </button>
                 </div>
 
@@ -146,7 +186,15 @@ export function ImageGeneratorModal({ isOpen, onClose, onGenerate, onUpload, ite
                 {onUpload && (
                     <div className="flex border-b border-white/5 px-6">
                         <button
-                            onClick={() => setMode('generate')}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                setMode('generate');
+                            }}
+                            onMouseDown={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                            }}
                             className={cn(
                                 "px-4 py-3 text-sm font-medium border-b-2 transition-colors",
                                 mode === 'generate'
@@ -157,7 +205,15 @@ export function ImageGeneratorModal({ isOpen, onClose, onGenerate, onUpload, ite
                             AI Generator
                         </button>
                         <button
-                            onClick={() => setMode('upload')}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                setMode('upload');
+                            }}
+                            onMouseDown={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                            }}
                             className={cn(
                                 "px-4 py-3 text-sm font-medium border-b-2 transition-colors",
                                 mode === 'upload'
@@ -181,9 +237,14 @@ export function ImageGeneratorModal({ isOpen, onClose, onGenerate, onUpload, ite
                                 </label>
                                 <textarea
                                     value={prompt}
-                                    onChange={(e) => setPrompt(e.target.value)}
+                                    onChange={(e) => {
+                                        // Don't prevent default or stop propagation - let the input work normally
+                                        setPrompt(e.target.value);
+                                    }}
                                     placeholder="A weathered warrior standing in a field of crimson flowers, dramatic lighting, cinematic composition..."
                                     className="w-full h-32 px-4 py-3 rounded-xl premium-input resize-none"
+                                    spellCheck={true}
+                                    autoFocus
                                 />
                             </div>
 
@@ -201,7 +262,15 @@ export function ImageGeneratorModal({ isOpen, onClose, onGenerate, onUpload, ite
                                         return (
                                             <button
                                                 key={provider.id}
-                                                onClick={() => !isDisabled && setSelectedProvider(provider.id)}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                    if (!isDisabled) setSelectedProvider(provider.id);
+                                                }}
+                                                onMouseDown={(e) => {
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                }}
                                                 disabled={isDisabled}
                                                 className={cn(
                                                     "relative p-4 rounded-xl text-left transition-all border",
@@ -210,6 +279,7 @@ export function ImageGeneratorModal({ isOpen, onClose, onGenerate, onUpload, ite
                                                         ? "border-primary bg-primary/10"
                                                         : "border-white/5 bg-white/[0.02] hover:bg-white/[0.05]"
                                                 )}
+                                                style={{ pointerEvents: 'auto' }}
                                             >
                                                 <Icon className={cn(
                                                     "w-5 h-5 mb-2",
@@ -234,6 +304,39 @@ export function ImageGeneratorModal({ isOpen, onClose, onGenerate, onUpload, ite
                                     })}
                                 </div>
                             </div>
+
+                            {/* Generated Image Preview */}
+                            {generatedPreview && (
+                                <div className="mt-4">
+                                    <p className="text-sm font-medium text-muted-foreground mb-2">Generated Image Preview</p>
+                                    <div className="relative aspect-video rounded-xl overflow-hidden border border-white/10">
+                                        <img src={generatedPreview} alt="Generated preview" className="w-full h-full object-cover" />
+                                        <button
+                                            onClick={() => setGeneratedPreview(null)}
+                                            className="absolute top-2 right-2 p-1 rounded-full bg-black/50 hover:bg-black/70 text-white transition-colors"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Error Display */}
+                            {generationError && (
+                                <div className="flex items-start gap-3 p-4 rounded-xl bg-red-500/10 border border-red-500/30">
+                                    <X className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                                    <div className="text-sm flex-1">
+                                        <p className="font-medium text-red-400 mb-1">Generation Failed</p>
+                                        <p className="text-red-300/80">{generationError}</p>
+                                    </div>
+                                    <button
+                                        onClick={() => setGenerationError(null)}
+                                        className="p-1 hover:bg-red-500/20 rounded transition-colors"
+                                    >
+                                        <X className="w-4 h-4 text-red-400" />
+                                    </button>
+                                </div>
+                            )}
 
                             {/* Info Box */}
                             <div className="flex items-start gap-3 p-4 rounded-xl bg-blue-500/5 border border-blue-500/20">
@@ -306,29 +409,50 @@ export function ImageGeneratorModal({ isOpen, onClose, onGenerate, onUpload, ite
 
                 {/* Footer */}
                 <div className="p-6 border-t border-white/5 flex justify-end gap-3">
-                    <Button variant="outline" onClick={onClose} className="glass">
+                    <Button 
+                        variant="outline" 
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onClose();
+                        }} 
+                        className="glass"
+                    >
                         Cancel
                     </Button>
                     {mode === 'generate' ? (
-                        <Button
-                            onClick={handleGenerate}
-                            disabled={!prompt.trim() || isGenerating}
-                            className="premium-button"
-                        >
-                            {isGenerating ? (
-                                'Generating...'
-                            ) : (
-                                <>
-                                    <Sparkles className="w-4 h-4 mr-2" />
-                                    Generate
-                                </>
-                            )}
-                        </Button>
+                        generatedPreview ? (
+                            <Button
+                                onClick={handleUseGeneratedImage}
+                                className="premium-button"
+                            >
+                                <Check className="w-4 h-4 mr-2" />
+                                Use Image
+                            </Button>
+                        ) : (
+                            <Button
+                                onClick={handleGenerate}
+                                disabled={!prompt.trim() || isGenerating}
+                                className="premium-button"
+                            >
+                                {isGenerating ? (
+                                    'Generating...'
+                                ) : (
+                                    <>
+                                        <Sparkles className="w-4 h-4 mr-2" />
+                                        Generate
+                                    </>
+                                )}
+                            </Button>
+                        )
                     ) : (
                         <Button
-                            onClick={handleUploadConfirm}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleUploadConfirm();
+                            }}
                             disabled={!uploadPreview}
                             className="premium-button"
+                            style={{ pointerEvents: 'auto' }}
                         >
                             <Check className="w-4 h-4 mr-2" />
                             Use Image
@@ -339,7 +463,10 @@ export function ImageGeneratorModal({ isOpen, onClose, onGenerate, onUpload, ite
         </div>
     );
 
-    return typeof window !== 'undefined' && document.body
-        ? createPortal(modalContent, document.body)
-        : modalContent;
+    // Use portal to render outside any parent dialogs - ensures textarea works
+    if (typeof window === 'undefined' || !document.body) {
+        return modalContent;
+    }
+
+    return createPortal(modalContent, document.body);
 }

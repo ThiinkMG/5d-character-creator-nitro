@@ -86,9 +86,9 @@ export function MentionInput({
     });
 
     // Handle text input and detect "@"
-    const handleInput = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const handleInput = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const text = e.target.value;
-        const cursorPos = e.target.selectionStart;
+        const cursorPos = e.target.selectionStart ?? 0;
         
         // Find "@" before cursor
         const textBeforeCursor = text.substring(0, cursorPos);
@@ -210,7 +210,7 @@ export function MentionInput({
     }, [onChange]);
 
     // Handle keyboard navigation in mentions dropdown
-    const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         if (showMentions && filteredMentions.length > 0) {
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
@@ -244,10 +244,11 @@ export function MentionInput({
     }, [showMentions, filteredMentions, selectedIndex, insertMention, onKeyDown]);
 
     // Close mentions on blur (with delay to allow clicks)
-    const handleBlur = useCallback((e: React.FocusEvent<HTMLTextAreaElement>) => {
+    const handleBlur = useCallback((e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         setTimeout(() => {
             if (!mentionsListRef.current?.contains(document.activeElement) && 
-                document.activeElement !== textareaRef.current) {
+                document.activeElement !== textareaRef.current &&
+                document.activeElement !== searchInputRef.current) {
                 setShowMentions(false);
                 setSearchQuery('');
                 setMentionQuery('');
@@ -287,32 +288,40 @@ export function MentionInput({
         }
     }, [selectedIndex, showMentions]);
 
-    const sharedProps = {
-        ref: textareaRef,
-        value,
-        onChange: handleInput,
-        onKeyDown: handleKeyDown,
-        onBlur: handleBlur,
-        placeholder,
-        disabled,
-        className: cn(
-            "w-full bg-transparent border-none outline-none resize-none",
-            "focus:ring-1 focus:ring-primary/30 rounded-md px-2 py-1 -mx-2 -my-1",
-            "text-inherit font-inherit leading-inherit",
-            className
-        )
-    };
+    const baseClassName = cn(
+        "w-full bg-transparent border-none outline-none resize-none",
+        "focus:ring-1 focus:ring-primary/30 rounded-md px-2 py-1 -mx-2 -my-1",
+        "text-inherit font-inherit leading-inherit",
+        className
+    );
 
     return (
         <div className="relative">
             {multiline ? (
                 <textarea
-                    {...sharedProps}
+                    ref={textareaRef}
+                    value={value}
+                    onChange={handleInput}
+                    onKeyDown={handleKeyDown}
+                    onBlur={handleBlur}
+                    placeholder={placeholder}
+                    disabled={disabled}
+                    className={baseClassName}
                     rows={Math.max(minRows, value.split('\n').length)}
                     style={{ minHeight: `${minRows * 1.5}em` }}
                 />
             ) : (
-                <input type="text" {...sharedProps} />
+                <input 
+                    type="text" 
+                    ref={searchInputRef}
+                    value={value}
+                    onChange={handleInput as React.ChangeEventHandler<HTMLInputElement>}
+                    onKeyDown={handleKeyDown}
+                    onBlur={handleBlur}
+                    placeholder={placeholder}
+                    disabled={disabled}
+                    className={baseClassName}
+                />
             )}
 
             {/* Mentions Dropdown */}

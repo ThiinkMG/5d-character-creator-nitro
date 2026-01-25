@@ -149,17 +149,16 @@ const GalleryCard: React.FC<GalleryCardProps> = ({
             </div>
 
             {/* Content */}
-            <div className="relative h-full flex flex-col justify-between p-4 md:p-5">
-
-                {/* Top Row */}
-                <div className="flex items-start justify-between">
-                    {/* Left Side: Selection + Project Badge */}
-                    <div className="flex items-center gap-2">
+            <div className="relative h-full flex flex-col p-5 md:p-6">
+                {/* Top Section: Controls */}
+                <div className="flex items-start justify-between mb-auto z-10">
+                    {/* Left: Selection + Project Badge */}
+                    <div className="flex items-center gap-2.5 flex-1 min-w-0">
                         {/* Selection Checkbox */}
                         <div
                             className={cn(
-                                "transition-all duration-300",
-                                isHovered || isSelected ? 'opacity-100' : 'opacity-0'
+                                "transition-all duration-300 flex-shrink-0",
+                                isHovered || isSelected ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
                             )}
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -168,48 +167,72 @@ const GalleryCard: React.FC<GalleryCardProps> = ({
                         >
                             <div
                                 className={cn(
-                                    "w-6 h-6 rounded-lg flex items-center justify-center transition-all border",
+                                    "w-5 h-5 rounded-md flex items-center justify-center transition-all border-2 cursor-pointer",
                                     isSelected
-                                        ? "bg-primary border-primary text-white"
-                                        : "bg-black/50 border-white/20 hover:border-primary/50 backdrop-blur-md"
+                                        ? "bg-primary border-primary text-white shadow-lg shadow-primary/50"
+                                        : "bg-black/60 border-white/30 hover:border-primary/60 backdrop-blur-sm"
                                 )}
                             >
-                                {isSelected && <Check className="w-3.5 h-3.5" />}
+                                {isSelected && <Check className="w-3 h-3" />}
                             </div>
                         </div>
 
                         {/* Project Badge */}
                         {displaySettings.showProjectName && projectName && (
                             <div
-                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium backdrop-blur-md"
+                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium backdrop-blur-sm flex-shrink-0"
                                 style={{
-                                    background: 'rgba(249, 115, 22, 0.2)',
-                                    border: '1px solid rgba(249, 115, 22, 0.3)',
+                                    background: 'rgba(249, 115, 22, 0.15)',
+                                    border: '1px solid rgba(249, 115, 22, 0.25)',
                                     color: '#F97316'
                                 }}
                             >
-                                <Folder className="w-3 h-3" />
-                                <span className="max-w-[80px] truncate">{projectName}</span>
+                                <Folder className="w-3 h-3 flex-shrink-0" />
+                                <span className="truncate">{projectName}</span>
                             </div>
                         )}
                     </div>
 
-                    {/* Right Side: Actions */}
-                    <div className="flex items-center gap-1">
-                        {/* Action Menu (on hover) - Simplified to just image generation */}
+                    {/* Right: Actions */}
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {/* Image Source Indicator - Always visible, more prominent */}
+                        {item.imageSource && (
+                            <div
+                                className="p-1.5 rounded-lg backdrop-blur-sm transition-all"
+                                style={{
+                                    background: item.imageSource === 'generated' 
+                                        ? 'rgba(249, 115, 22, 0.12)' 
+                                        : item.imageSource === 'uploaded'
+                                        ? 'rgba(20, 184, 166, 0.12)'
+                                        : 'rgba(12, 12, 18, 0.7)',
+                                    border: item.imageSource === 'generated'
+                                        ? '1px solid rgba(249, 115, 22, 0.2)'
+                                        : item.imageSource === 'uploaded'
+                                        ? '1px solid rgba(20, 184, 166, 0.2)'
+                                        : '1px solid rgba(255, 255, 255, 0.08)'
+                                }}
+                                title={`Image Source: ${item.imageSource}`}
+                            >
+                                {item.imageSource === 'generated' ? <Sparkles className="w-3.5 h-3.5 text-[#F97316]" /> :
+                                    item.imageSource === 'uploaded' ? <Upload className="w-3.5 h-3.5 text-[#14B8A6]" /> :
+                                        <ImageIcon className="w-3.5 h-3.5 text-white/50" />}
+                            </div>
+                        )}
+
+                        {/* Action Buttons (on hover) */}
                         <div
                             className={cn(
-                                "flex items-center gap-1 transition-all duration-300",
-                                isHovered ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-2'
+                                "flex items-center gap-1.5 transition-all duration-300",
+                                isHovered ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-2 pointer-events-none'
                             )}
                             onClick={(e) => e.stopPropagation()}
                         >
                             <button
                                 onClick={() => onImageChange(item.id, 'generate')}
-                                className="p-2 rounded-lg backdrop-blur-md transition-all hover:scale-110"
+                                className="p-2 rounded-lg backdrop-blur-sm transition-all hover:scale-110 active:scale-95"
                                 style={{
-                                    background: 'rgba(249, 115, 22, 0.2)',
-                                    border: '1px solid rgba(249, 115, 22, 0.3)'
+                                    background: 'rgba(249, 115, 22, 0.15)',
+                                    border: '1px solid rgba(249, 115, 22, 0.25)'
                                 }}
                                 title="Generate Image"
                             >
@@ -217,91 +240,81 @@ const GalleryCard: React.FC<GalleryCardProps> = ({
                             </button>
                             <button
                                 onClick={() => onImageChange(item.id, 'upload')}
-                                className="p-2 rounded-lg backdrop-blur-md transition-all hover:scale-110 bg-teal-500/20 border border-teal-500/30 hover:bg-teal-500/30"
+                                className="p-2 rounded-lg backdrop-blur-sm transition-all hover:scale-110 active:scale-95 bg-teal-500/15 border border-teal-500/25 hover:bg-teal-500/25"
                                 title="Upload Image"
                             >
                                 <Upload className="w-3.5 h-3.5 text-teal-400" />
                             </button>
                         </div>
-
-                        {/* Image Source (always visible) */}
-                        <div
-                            className={cn(
-                                "p-1.5 rounded-full backdrop-blur-md transition-opacity",
-                                isHovered ? 'opacity-0' : 'opacity-100'
-                            )}
-                            style={{
-                                background: 'rgba(12, 12, 18, 0.7)',
-                                border: '1px solid rgba(255, 255, 255, 0.1)'
-                            }}
-                            title={`Image Source: ${item.imageSource || 'Unknown'}`}
-                        >
-                            {item.imageSource === 'generated' ? <Sparkles className="w-3 h-3 text-[#F97316]" /> :
-                                item.imageSource === 'uploaded' ? <Upload className="w-3 h-3 text-[#14B8A6]" /> :
-                                    <ImageIcon className="w-3 h-3 text-white/50" />}
-                        </div>
                     </div>
                 </div>
 
-                {/* Bottom Content */}
-                <div className="space-y-2">
-                    {/* Role/Genre Badge - Now anchored at bottom */}
-                    <div
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium backdrop-blur-md w-fit"
-                        style={{
-                            background: 'rgba(12, 12, 18, 0.7)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                            color: 'rgba(255, 255, 255, 0.7)'
-                        }}
-                    >
-                        <Users className="w-3.5 h-3.5" />
-                        <span className="capitalize">{item.role || 'Character'}</span>
-                    </div>
-
-                    {/* Title & Info */}
-                    <div className="space-y-1">
+                {/* Bottom Section: Content */}
+                <div className="mt-auto space-y-3">
+                    {/* Title Section */}
+                    <div className="space-y-1.5">
+                        {/* Archetype Badge */}
                         {item.archetype && (
-                            <p className="text-xs font-medium text-[#F97316] tracking-wide uppercase">
-                                {item.archetype}
-                            </p>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-semibold text-primary/80 tracking-widest uppercase">
+                                    {item.archetype}
+                                </span>
+                            </div>
                         )}
-                        <h3 className="text-lg md:text-xl font-semibold text-white tracking-tight leading-tight">
+                        
+                        {/* Name */}
+                        <h3 className="text-xl md:text-2xl font-bold text-white tracking-tight leading-tight line-clamp-2">
                             {item.name}
                         </h3>
-                        {/* Show tagline (narrative-first) or fallback to coreConcept */}
-                        {displaySettings.showDescription && (item.tagline || item.coreConcept) && size !== 'small' && (
-                            <p className="text-sm text-white/60 line-clamp-2 mt-1 italic">
-                                "{item.tagline || item.coreConcept}"
-                            </p>
-                        )}
                     </div>
 
-                    {/* Genre Tag - Only essential metadata */}
-                    {item.genre && size !== 'small' && (
-                        <div className="flex flex-wrap gap-1.5">
+                    {/* Description */}
+                    {displaySettings.showDescription && (item.tagline || item.coreConcept) && size !== 'small' && (
+                        <p className="text-sm text-white/70 line-clamp-2 leading-relaxed">
+                            {item.tagline || item.coreConcept}
+                        </p>
+                    )}
+
+                    {/* Metadata Row */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                        {/* Role Badge */}
+                        <div
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium backdrop-blur-sm"
+                            style={{
+                                background: 'rgba(12, 12, 18, 0.8)',
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                color: 'rgba(255, 255, 255, 0.8)'
+                            }}
+                        >
+                            <Users className="w-3 h-3" />
+                            <span className="capitalize">{item.role || 'Character'}</span>
+                        </div>
+
+                        {/* Genre Tag */}
+                        {item.genre && (
                             <span
-                                className="px-2 py-0.5 text-xs rounded-md"
+                                className="px-2.5 py-1 text-xs rounded-lg font-medium"
                                 style={{
-                                    background: 'rgba(139, 92, 246, 0.15)',
-                                    color: 'rgba(167, 139, 250, 0.9)',
+                                    background: 'rgba(139, 92, 246, 0.12)',
+                                    color: 'rgba(167, 139, 250, 0.95)',
                                     border: '1px solid rgba(139, 92, 246, 0.2)'
                                 }}
                             >
                                 {item.genre}
                             </span>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
 
                 {/* View Arrow (on hover) */}
                 <div
                     className={cn(
-                        "absolute bottom-4 right-4 p-2 rounded-full transition-all duration-300",
-                        isHovered ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2'
+                        "absolute bottom-5 right-5 p-2.5 rounded-full transition-all duration-300 shadow-lg",
+                        isHovered ? 'opacity-100 translate-x-0 scale-100' : 'opacity-0 -translate-x-2 scale-95'
                     )}
                     style={{
                         background: 'linear-gradient(135deg, #F97316 0%, #EA580C 100%)',
-                        boxShadow: '0 4px 15px rgba(249, 115, 22, 0.4)'
+                        boxShadow: '0 4px 20px rgba(249, 115, 22, 0.5)'
                     }}
                 >
                     <ChevronRight className="w-4 h-4 text-white" />
@@ -749,8 +762,8 @@ export default function CharactersPage() {
         setGeneratorModalOpen(true);
     };
 
-    const handleGenerateImage = async (prompt: string, provider: ImageProvider) => {
-        if (!selectedItemForImage) return;
+    const handleGenerateImage = async (prompt: string, provider: ImageProvider): Promise<string | null> => {
+        if (!selectedItemForImage) return null;
 
         try {
             // Get API keys from localStorage
@@ -777,6 +790,7 @@ export default function CharactersPage() {
                 imageUrl: data.imageUrl,
                 imageSource: 'generated'
             });
+            return data.imageUrl;
         } catch (error) {
             console.error('Failed to generate image:', error);
             throw error;

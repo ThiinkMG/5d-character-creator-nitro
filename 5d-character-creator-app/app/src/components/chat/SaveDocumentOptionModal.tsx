@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { FileText, MessageSquare, Sparkles, Loader2 } from 'lucide-react';
+import { FileText, MessageSquare, Sparkles, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -34,15 +34,27 @@ export function SaveDocumentOptionModal({
 }: SaveDocumentOptionModalProps) {
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-2xl bg-[#0c0c14] border-white/10">
-                <DialogHeader>
-                    <DialogTitle className="text-2xl font-bold text-white flex items-center gap-2">
+            <DialogContent 
+                showCloseButton={false}
+                className="max-w-[90vw] w-[90vw] sm:max-w-4xl bg-[#0c0c14] border-white/10"
+            >
+                <DialogHeader className="relative">
+                    <DialogTitle className="text-2xl font-bold text-white flex items-center gap-2 pr-8">
                         <FileText className="w-6 h-6 text-primary" />
                         Save {documentType === 'script' ? 'Script' : 'Roleplay'} Document
                     </DialogTitle>
                     <DialogDescription className="text-muted-foreground">
                         Choose how you want to save this {documentType === 'script' ? 'script' : 'roleplay session'} to {characterName}'s document library
                     </DialogDescription>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={onClose}
+                        className="absolute top-0 right-0 h-8 w-8 p-0 text-muted-foreground hover:bg-red-500/10 hover:text-red-400 rounded-lg transition-colors"
+                        title="Close"
+                    >
+                        <X className="w-4 h-4" />
+                    </Button>
                 </DialogHeader>
 
                 <div className="space-y-4 mt-6">

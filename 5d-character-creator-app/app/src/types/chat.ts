@@ -18,6 +18,12 @@ export interface Message {
     };
 }
 
+export interface LinkedEntities {
+    characters: Array<{ id: string; name: string }>;
+    worlds: Array<{ id: string; name: string }>;
+    projects: Array<{ id: string; name: string }>;
+}
+
 export interface ChatSession {
     id: string;
     title: string;
@@ -25,8 +31,11 @@ export interface ChatSession {
     updatedAt: Date;
     createdAt: Date;
     messages: Message[];
-    mode: 'chat' | 'character' | 'world' | 'project' | 'lore' | 'scene';
+    mode: 'chat' | 'character' | 'world' | 'project' | 'lore' | 'scene' | 'workshop' | 'chat_with' | 'script';
     relatedId?: string; // ID of the character/world/project if applicable
+
+    // Multi-entity linking for sessions involving multiple characters, worlds, or projects
+    linkedEntities?: LinkedEntities;
 
     // NEW: Track which message updates have been applied (persisted)
     appliedMessageIds?: string[];

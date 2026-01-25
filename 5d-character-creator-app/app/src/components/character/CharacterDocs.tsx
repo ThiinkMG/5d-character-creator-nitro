@@ -19,7 +19,13 @@ import {
     DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { CharacterDocument } from '@/types/document';
+import {
+    CharacterDocument,
+    DocumentType,
+    SUPPORTED_EXTENSIONS,
+    DOCUMENT_TYPE_LABELS,
+    DOCUMENT_TYPE_COLORS
+} from '@/types/document';
 import { useStore } from '@/lib/store';
 import { ImageGeneratorModal } from '@/components/gallery';
 import { ImageProvider } from '@/types/image-config';
@@ -41,7 +47,7 @@ interface CharacterDocsProps {
 
 type ViewMode = 'grid' | 'list';
 type SortOption = 'newest' | 'oldest' | 'a-z' | 'z-a';
-type FilterType = 'all' | 'script' | 'roleplay';
+type FilterType = 'all' | DocumentType;
 
 export function CharacterDocs({ characterId, characterName }: CharacterDocsProps) {
     const { 
@@ -65,6 +71,8 @@ export function CharacterDocs({ characterId, characterName }: CharacterDocsProps
     const [editingTitle, setEditingTitle] = useState<string | null>(null);
     const [titleEditValue, setTitleEditValue] = useState('');
     const [activeSection, setActiveSection] = useState<string>('');
+    const [isUploading, setIsUploading] = useState(false);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
 
     const documents = useMemo(() => {
         let filtered = getCharacterDocuments(characterId);
@@ -102,8 +110,85 @@ export function CharacterDocs({ characterId, characterName }: CharacterDocsProps
         return filtered;
     }, [characterId, searchQuery, filterType, sortBy, getCharacterDocuments]);
 
+    // Get unique document types for filter dropdown
+    const availableTypes = useMemo(() => {
+        const allDocs = getCharacterDocuments(characterId);
+        const types = new Set(allDocs.map(d => d.type));
+        return Array.from(types) as DocumentType[];
+    }, [characterId, getCharacterDocuments]);
+
+    // Handle file upload
+    const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
+
+        setIsUploading(true);
+
+        for (const file of Array.from(files)) {
+            try {
+                // Check file extension
+                const extension = '.' + file.name.split('.').pop()?.toLowerCase();
+                if (!SUPPORTED_EXTENSIONS.includes(extension)) {
+                    console.warn(`Unsupported file type: ${file.name}`);
+                    alert(`Unsupported file type: ${file.name}\nSupported: .md, .txt, .json, .pdf`);
+                    continue;
+                }
+
+                // Parse file content via API (handles PDFs and text files)
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch('/api/parse-document', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to parse document');
+                }
+
+                const { content, fileType } = await response.json();
+
+                // Create document
+                const title = file.name.replace(/\.[^/.]+$/, ''); // Remove extension
+                const now = new Date();
+
+                addCharacterDocument({
+                    id: `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    characterId,
+                    type: 'uploaded',
+                    title,
+                    content,
+                    createdAt: now,
+                    updatedAt: now,
+                    sourceFile: {
+                        name: file.name,
+                        type: file.type || fileType || 'text/plain',
+                        size: file.size
+                    }
+                });
+
+                console.log(`Successfully uploaded: ${file.name}`);
+            } catch (error) {
+                console.error(`Failed to upload ${file.name}:`, error);
+                alert(`Failed to upload ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+        }
+
+        setIsUploading(false);
+        // Reset file input
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
 
     const handleSelectDoc = (docId: string, event?: React.MouseEvent) => {
+        // Stop propagation to prevent conflicts
+        if (event) {
+            event.stopPropagation();
+        }
+        
         // In select mode, always toggle selection
         if (isSelectMode) {
             setSelectedDocs(prev => {
@@ -134,10 +219,29 @@ export function CharacterDocs({ characterId, characterName }: CharacterDocsProps
     };
 
     const handleBulkDelete = () => {
-        if (selectedDocs.size === 0) return;
-        if (confirm(`Delete ${selectedDocs.size} document(s)?`)) {
-            selectedDocs.forEach(id => deleteCharacterDocument(id));
+        if (selectedDocs.size === 0) {
+            console.log('[CharacterDocs] No documents selected for deletion');
+            return;
+        }
+
+        const count = selectedDocs.size;
+        const confirmed = window.confirm(`Delete ${count} document${count !== 1 ? 's' : ''}? This action cannot be undone.`);
+
+        if (confirmed) {
+            console.log('[CharacterDocs] Deleting documents:', Array.from(selectedDocs));
+            // Create a copy of selectedDocs to avoid issues during iteration
+            const idsToDelete = Array.from(selectedDocs);
+
+            // Delete each document
+            idsToDelete.forEach(id => {
+                deleteCharacterDocument(id);
+            });
+
+            // Clear selection and exit select mode
             setSelectedDocs(new Set());
+            setIsSelectMode(false);
+
+            console.log('[CharacterDocs] Successfully deleted', count, 'document(s)');
         }
     };
 
@@ -210,17 +314,32 @@ export function CharacterDocs({ characterId, characterName }: CharacterDocsProps
         setImageModalOpen(true);
     };
 
-    const handleGenerateImage = async (prompt: string, provider: ImageProvider) => {
-        if (!selectedDocForImage) return;
+    const handleRemoveImage = (docId: string, event?: React.MouseEvent) => {
+        if (event) {
+            event.stopPropagation();
+        }
+        updateCharacterDocument(docId, {
+            thumbnail: undefined,
+            image: undefined,
+            imageSource: undefined,
+        });
+    };
+
+    const handleGenerateImage = async (prompt: string, provider: ImageProvider): Promise<string | null> => {
+        if (!selectedDocForImage) return null;
 
         try {
             const savedConfig = JSON.parse(localStorage.getItem('5d-api-config') || '{}');
-            const apiKey = provider === 'openai' ? savedConfig.openaiKey : savedConfig.anthropicKey;
 
             const response = await fetch('/api/generate-image', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, provider, apiKey }),
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(savedConfig.geminiKey && { 'x-gemini-key': savedConfig.geminiKey }),
+                    ...(savedConfig.openaiKey && { 'x-openai-key': savedConfig.openaiKey }),
+                    ...(savedConfig.dalleKey && { 'x-openai-key': savedConfig.dalleKey }),
+                },
+                body: JSON.stringify({ prompt, provider }),
             });
 
             if (response.ok) {
@@ -231,29 +350,27 @@ export function CharacterDocs({ characterId, characterName }: CharacterDocsProps
                         thumbnail: data.imageUrl,
                         imageSource: 'ai-generated'
                     });
+                    return data.imageUrl;
                 }
             }
+            return null;
         } catch (error) {
             console.error('Failed to generate image:', error);
+            throw error;
         } finally {
             setImageModalOpen(false);
             setSelectedDocForImage(null);
         }
     };
 
-    const handleUploadImage = (file: File) => {
+    const handleUploadImage = (dataUrl: string) => {
         if (!selectedDocForImage) return;
 
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const imageUrl = e.target?.result as string;
-            updateCharacterDocument(selectedDocForImage, {
-                image: imageUrl,
-                thumbnail: imageUrl,
-                imageSource: 'uploaded'
-            });
-        };
-        reader.readAsDataURL(file);
+        updateCharacterDocument(selectedDocForImage, {
+            image: dataUrl,
+            thumbnail: dataUrl,
+            imageSource: 'uploaded'
+        });
         setImageModalOpen(false);
         setSelectedDocForImage(null);
     };
@@ -271,9 +388,23 @@ export function CharacterDocs({ characterId, characterName }: CharacterDocsProps
         setTitleEditValue('');
     };
 
-    const handleDeleteDoc = (docId: string) => {
-        if (confirm('Delete this document?')) {
+    const handleDeleteDoc = (docId: string, event?: React.MouseEvent) => {
+        // Stop propagation to prevent card click
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
+        
+        const confirmed = window.confirm('Delete this document?');
+        if (confirmed) {
             deleteCharacterDocument(docId);
+            // Remove from selection if it was selected
+            setSelectedDocs(prev => {
+                const next = new Set(prev);
+                next.delete(docId);
+                return next;
+            });
+            // Close preview if this document was being previewed
             if (previewDoc?.id === docId) {
                 setPreviewDoc(null);
             }
@@ -292,13 +423,35 @@ export function CharacterDocs({ characterId, characterName }: CharacterDocsProps
                 </div>
 
                 <div className="flex items-center gap-2">
+                    {/* Upload Button */}
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".md,.txt,.json,.markdown,.pdf"
+                        multiple
+                        onChange={handleFileUpload}
+                        className="hidden"
+                    />
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploading}
+                        className="gap-2 bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
+                    >
+                        <Upload className="w-4 h-4" />
+                        {isUploading ? 'Uploading...' : 'Upload Document'}
+                    </Button>
+
                     {/* Select Mode Toggle */}
                     <Button
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                            setIsSelectMode(!isSelectMode);
-                            if (!isSelectMode) {
+                            const newSelectMode = !isSelectMode;
+                            setIsSelectMode(newSelectMode);
+                            // Clear selection when exiting select mode
+                            if (!newSelectMode) {
                                 setSelectedDocs(new Set());
                             }
                         }}
@@ -364,19 +517,25 @@ export function CharacterDocs({ characterId, characterName }: CharacterDocsProps
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline" className="gap-2 bg-white/5 border-white/10">
                             <Filter className="w-4 h-4" />
-                            {filterType === 'all' ? 'All Types' : filterType === 'script' ? 'Scripts' : 'Roleplay'}
+                            {filterType === 'all' ? 'All Types' : DOCUMENT_TYPE_LABELS[filterType as DocumentType] || filterType}
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent className="bg-[#0A0A0F] border-white/20">
                         <DropdownMenuItem onClick={() => setFilterType('all')} className="text-white">
                             All Types
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setFilterType('script')} className="text-white">
-                            Scripts
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setFilterType('roleplay')} className="text-white">
-                            Roleplay
-                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="bg-white/10" />
+                        {availableTypes.map(type => (
+                            <DropdownMenuItem
+                                key={type}
+                                onClick={() => setFilterType(type)}
+                                className="text-white"
+                            >
+                                <span className={cn("text-xs px-2 py-0.5 rounded mr-2", DOCUMENT_TYPE_COLORS[type])}>
+                                    {DOCUMENT_TYPE_LABELS[type]}
+                                </span>
+                            </DropdownMenuItem>
+                        ))}
                     </DropdownMenuContent>
                 </DropdownMenu>
 
@@ -450,8 +609,19 @@ export function CharacterDocs({ characterId, characterName }: CharacterDocsProps
                 <div className="text-center py-12">
                     <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
                     <p className="text-muted-foreground">No documents yet</p>
-                    <p className="text-sm text-muted-foreground mt-2">
-                        Generate scripts or roleplay sessions to see them here
+                    <p className="text-sm text-muted-foreground mt-2 mb-4">
+                        Upload documents or generate scripts and roleplay sessions
+                    </p>
+                    <Button
+                        variant="outline"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="gap-2 bg-white/5 border-white/10"
+                    >
+                        <Upload className="w-4 h-4" />
+                        Upload Your First Document
+                    </Button>
+                    <p className="text-xs text-muted-foreground mt-3">
+                        Supports: .md, .txt, .json, .pdf files
                     </p>
                 </div>
             ) : (
@@ -468,30 +638,46 @@ export function CharacterDocs({ characterId, characterName }: CharacterDocsProps
                             <div
                                 key={doc.id}
                                 className={cn(
-                                    "group relative rounded-lg border transition-all cursor-pointer",
+                                    "group relative rounded-lg border transition-all",
                                     viewMode === 'grid'
                                         ? "bg-white/5 border-white/10 hover:border-primary/30 hover:bg-white/10"
                                         : "bg-white/5 border-white/10 hover:border-primary/30 p-4",
-                                    isSelected && "border-primary bg-primary/10"
+                                    isSelected && "border-primary bg-primary/10",
+                                    isSelectMode ? "cursor-pointer" : "cursor-pointer"
                                 )}
-                                onClick={(e) => handleSelectDoc(doc.id, e)}
+                                onClick={(e) => {
+                                    // Only handle click if not clicking on interactive elements
+                                    const target = e.target as HTMLElement;
+                                    if (!target.closest('button') && !target.closest('[role="menuitem"]') && !target.closest('input')) {
+                                        handleSelectDoc(doc.id, e);
+                                    }
+                                }}
                             >
                                 {/* Selection Checkbox - Only show in select mode */}
                                 {isSelectMode && (
-                                    <div className="absolute top-3 left-3 z-10">
+                                    <div 
+                                        className="absolute top-3 left-3 z-10"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleSelectDoc(doc.id, e);
+                                        }}
+                                    >
                                         <div className={cn(
-                                            "w-5 h-5 rounded border-2 flex items-center justify-center transition-all",
+                                            "w-5 h-5 rounded border-2 flex items-center justify-center transition-all cursor-pointer",
                                             isSelected 
                                                 ? "bg-primary border-primary" 
-                                                : "bg-black/40 border-white/20"
+                                                : "bg-black/40 border-white/20 hover:border-primary/50"
                                         )}>
                                             {isSelected && <Check className="w-3 h-3 text-black" />}
                                         </div>
                                     </div>
                                 )}
 
-                                {/* Actions Menu */}
-                                <div className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {/* Actions Menu - Always visible in select mode for easier access */}
+                                <div className={cn(
+                                    "absolute top-3 right-3 z-10 transition-opacity",
+                                    isSelectMode ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                                )}>
                                     <DropdownMenu>
                                         <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                                             <Button
@@ -544,6 +730,15 @@ export function CharacterDocs({ characterId, characterName }: CharacterDocsProps
                                                 <Upload className="w-4 h-4 mr-2" />
                                                 Upload Image
                                             </DropdownMenuItem>
+                                            {(doc.thumbnail || doc.image) && (
+                                                <DropdownMenuItem
+                                                    onClick={(e) => handleRemoveImage(doc.id, e)}
+                                                    className="text-red-400"
+                                                >
+                                                    <Trash2 className="w-4 h-4 mr-2" />
+                                                    Remove Image
+                                                </DropdownMenuItem>
+                                            )}
                                             <DropdownMenuSeparator className="bg-white/10" />
                                             <DropdownMenuItem
                                                 onClick={(e) => {
@@ -569,7 +764,8 @@ export function CharacterDocs({ characterId, characterName }: CharacterDocsProps
                                             <DropdownMenuItem
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    handleDeleteDoc(doc.id);
+                                                    e.preventDefault();
+                                                    handleDeleteDoc(doc.id, e);
                                                 }}
                                                 className="text-red-400"
                                             >
@@ -623,11 +819,9 @@ export function CharacterDocs({ characterId, characterName }: CharacterDocsProps
                                             <div className="flex items-center gap-2 mt-2">
                                                 <span className={cn(
                                                     "text-xs px-2 py-0.5 rounded",
-                                                    doc.type === 'script' 
-                                                        ? "bg-blue-500/20 text-blue-400" 
-                                                        : "bg-purple-500/20 text-purple-400"
+                                                    DOCUMENT_TYPE_COLORS[doc.type] || "bg-gray-500/20 text-gray-400"
                                                 )}>
-                                                    {doc.type === 'script' ? 'Script' : 'Roleplay'}
+                                                    {DOCUMENT_TYPE_LABELS[doc.type] || doc.type}
                                                 </span>
                                                 <span className="text-xs text-muted-foreground">
                                                     {new Date(doc.createdAt).toLocaleDateString()}
@@ -636,20 +830,17 @@ export function CharacterDocs({ characterId, characterName }: CharacterDocsProps
                                         </div>
                                     </>
                                 ) : (
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-24 h-16 rounded overflow-hidden bg-black/40 shrink-0">
-                                            {doc.thumbnail || doc.image ? (
+                                    <div className="flex items-center gap-3">
+                                        {/* Only show thumbnail in list view if image exists */}
+                                        {(doc.thumbnail || doc.image) && (
+                                            <div className="w-16 h-12 rounded overflow-hidden bg-black/40 shrink-0">
                                                 <img
                                                     src={doc.thumbnail || doc.image}
                                                     alt={doc.title}
                                                     className="w-full h-full object-cover"
                                                 />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center">
-                                                    <FileText className="w-6 h-6 text-muted-foreground" />
-                                                </div>
-                                            )}
-                                        </div>
+                                            </div>
+                                        )}
                                         <div className="flex-1 min-w-0">
                                             {isEditing ? (
                                                 <Input
@@ -675,11 +866,9 @@ export function CharacterDocs({ characterId, characterName }: CharacterDocsProps
                                             <div className="flex items-center gap-3 text-sm text-muted-foreground">
                                                 <span className={cn(
                                                     "text-xs px-2 py-0.5 rounded",
-                                                    doc.type === 'script' 
-                                                        ? "bg-blue-500/20 text-blue-400" 
-                                                        : "bg-purple-500/20 text-purple-400"
+                                                    DOCUMENT_TYPE_COLORS[doc.type] || "bg-gray-500/20 text-gray-400"
                                                 )}>
-                                                    {doc.type === 'script' ? 'Script' : 'Roleplay'}
+                                                    {DOCUMENT_TYPE_LABELS[doc.type] || doc.type}
                                                 </span>
                                                 <span className="flex items-center gap-1">
                                                     <Calendar className="w-3 h-3" />

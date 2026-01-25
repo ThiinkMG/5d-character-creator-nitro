@@ -141,7 +141,7 @@ export function ManualSaveModal({
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="relative w-full max-w-2xl max-h-[90vh] bg-[#12121a] border border-white/10 rounded-xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="relative w-full max-w-[90vw] sm:max-w-4xl max-h-[90vh] bg-[#12121a] border border-white/10 rounded-xl shadow-2xl overflow-hidden flex flex-col">
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
                     <div className="flex items-center gap-3">

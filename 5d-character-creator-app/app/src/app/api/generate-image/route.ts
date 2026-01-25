@@ -28,9 +28,10 @@ export async function POST(req: Request) {
 
             case 'gemini':
                 if (!geminiKey) {
-                    return NextResponse.json({ error: 'Gemini API key is required' }, { status: 400 });
+                    return NextResponse.json({ error: 'Gemini API key is required. Please add your API key in Settings → Image Generation.' }, { status: 400 });
                 }
                 try {
+                    console.log('[Gemini] Sending request...');
                     const geminiResponse = await fetch(
                         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiKey}`,
                         {
@@ -51,9 +52,16 @@ export async function POST(req: Request) {
                     );
 
                     if (!geminiResponse.ok) {
-                        const error = await geminiResponse.text();
-                        console.error('Gemini API error:', error);
-                        return NextResponse.json({ error: 'Gemini API request failed' }, { status: 500 });
+                        const errorText = await geminiResponse.text();
+                        console.error('Gemini API error:', geminiResponse.status, errorText);
+
+                        if (geminiResponse.status === 400 && errorText.includes('API_KEY_INVALID')) {
+                            return NextResponse.json({ error: 'Invalid Gemini API key. Please check your API key in Settings.' }, { status: 401 });
+                        } else if (geminiResponse.status === 429) {
+                            return NextResponse.json({ error: 'Gemini rate limit exceeded. Please wait and try again.' }, { status: 429 });
+                        }
+
+                        return NextResponse.json({ error: `Gemini API error (${geminiResponse.status}). Using fallback generator.` }, { status: 500 });
                     }
 
                     const geminiData = await geminiResponse.json();
@@ -100,9 +108,10 @@ export async function POST(req: Request) {
 
             case 'dalle':
                 if (!openaiKey) {
-                    return NextResponse.json({ error: 'OpenAI API key is required' }, { status: 400 });
+                    return NextResponse.json({ error: 'OpenAI API key is required. Please add your API key in Settings → Image Generation.' }, { status: 400 });
                 }
                 try {
+                    console.log('[DALL-E] Sending request...');
                     const dalleResponse = await fetch('https://api.openai.com/v1/images/generations', {
                         method: 'POST',
                         headers: {
@@ -119,22 +128,41 @@ export async function POST(req: Request) {
                     });
 
                     if (!dalleResponse.ok) {
-                        const error = await dalleResponse.json();
-                        console.error('DALL-E API error:', error);
+                        const errorData = await dalleResponse.json().catch(() => ({}));
+                        console.error('DALL-E API error:', dalleResponse.status, errorData);
+
+                        // Provide helpful error messages
+                        const errorMessage = errorData.error?.message || '';
+                        if (dalleResponse.status === 401) {
+                            return NextResponse.json({
+                                error: 'Invalid OpenAI API key. Please check your API key in Settings.'
+                            }, { status: 401 });
+                        } else if (dalleResponse.status === 429) {
+                            return NextResponse.json({
+                                error: 'Rate limit exceeded or quota depleted. Please check your OpenAI account billing.'
+                            }, { status: 429 });
+                        } else if (dalleResponse.status === 400 && errorMessage.includes('safety')) {
+                            return NextResponse.json({
+                                error: 'Content policy violation. Please modify your prompt and try again.'
+                            }, { status: 400 });
+                        }
+
                         return NextResponse.json({
-                            error: error.error?.message || 'DALL-E API request failed'
-                        }, { status: 500 });
+                            error: errorMessage || `DALL-E API error (${dalleResponse.status})`
+                        }, { status: dalleResponse.status });
                     }
 
                     const dalleData = await dalleResponse.json();
                     imageUrl = dalleData.data[0]?.url;
 
                     if (!imageUrl) {
-                        return NextResponse.json({ error: 'No image returned from DALL-E' }, { status: 500 });
+                        return NextResponse.json({ error: 'No image returned from DALL-E. Please try again.' }, { status: 500 });
                     }
+                    console.log('[DALL-E] Image generated successfully');
                 } catch (e) {
                     console.error('DALL-E generation error:', e);
-                    return NextResponse.json({ error: 'DALL-E generation failed' }, { status: 500 });
+                    const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+                    return NextResponse.json({ error: `DALL-E generation failed: ${errorMessage}` }, { status: 500 });
                 }
                 break;
 

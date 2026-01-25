@@ -15,19 +15,24 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
-import { ChoiceChips, type Choice } from '@/components/chat/ChoiceModal';
+import { ChoiceChips, type Choice, type ChoiceContext } from '@/components/chat/ChoiceModal';
 import { CommandTutorialModal } from '@/components/chat/CommandTutorialModal';
 import { useStore } from '@/lib/store';
+import { getChatApiKey, getApiConfig } from '@/lib/api-keys';
 
 import { ChatSession, Message, AppliedUpdate } from '@/types/chat';
 import { PendingUpdateCard } from '@/components/chat/PendingUpdateCard';
 import { ReloadModal } from '@/components/chat/ReloadModal';
 import { UpdateHistorySidebar } from '@/components/chat/UpdateHistorySidebar';
 import { ModeSwitcher, type ChatMode } from '@/components/chat/ModeSwitcher';
+import { ModePresetManager } from '@/components/chat/ModePresetManager';
+import { getModeInstruction as getModeInstructionFromRegistry } from '@/lib/mode-registry';
 import { ManualSaveModal } from '@/components/chat/ManualSaveModal';
 import { SessionSetupModal, type SessionSetupConfig } from '@/components/chat/SessionSetupModal';
 import { SaveDocumentModal } from '@/components/chat/SaveDocumentModal';
 import { SaveDocumentOptionModal } from '@/components/chat/SaveDocumentOptionModal';
+import { SaveProjectDocumentModal } from '@/components/project/SaveProjectDocumentModal';
+import { ProjectDocumentType } from '@/types/document';
 import { fuzzyMatchByName, findBestMatch } from '@/lib/fuzzy-match';
 import { createDocumentFromSession, sessionToDocumentContent, generateDocumentTitle } from '@/lib/document-utils';
 import { History } from 'lucide-react';
@@ -108,6 +113,267 @@ const AVAILABLE_COMMANDS = [
     { id: 'help', label: '/help [command]', description: 'Get usage details', icon: AlertCircle },
 ];
 
+// Map output types to project document types
+const OUTPUT_TYPE_TO_DOC_TYPE: Record<string, ProjectDocumentType> = {
+    pitch_movie: 'movie-pitch',
+    pitch_tv: 'tv-series-pitch',
+    pitch_book: 'book-pitch',
+    treatment: 'treatment',
+    synopsis: 'synopsis',
+    story_bible: 'story-bible',
+};
+
+// Output type instructions for project document generation
+const OUTPUT_TYPE_INSTRUCTIONS: Record<string, { label: string; instruction: string }> = {
+    pitch_movie: {
+        label: 'Movie Pitch',
+        instruction: `[OUTPUT MODE: MOVIE PITCH DECK]
+You are generating a professional FILM PITCH for this project.
+
+## Structure to Generate:
+1. **Logline** (1-2 sentences capturing the hook)
+2. **Genre & Tone** (e.g., "Sci-fi thriller with noir elements")
+3. **Synopsis** (3-5 paragraphs - setup, conflict, resolution)
+4. **Main Characters** (brief descriptions with actor comparisons if relevant)
+5. **Visual Style** (cinematography, color palette, reference films)
+6. **Target Audience** (demographics, comparable films' box office)
+7. **Unique Selling Points** (what makes this stand out)
+
+## Format:
+- Write in present tense, active voice
+- Use industry-standard terminology
+- Keep it compelling and cinematic
+- Total length: 2-3 pages
+
+Generate the pitch deck now based on the project data provided.`
+    },
+    pitch_tv: {
+        label: 'TV Series Pitch',
+        instruction: `[OUTPUT MODE: TV SERIES PITCH BIBLE]
+You are generating a professional TV SERIES PITCH BIBLE for this project.
+
+## Structure to Generate:
+1. **Series Logline** (1-2 sentences)
+2. **Series Overview** (tone, genre, episode format)
+3. **Pilot Episode Synopsis** (detailed A/B story breakdown)
+4. **Season Arc** (major plot points for Season 1)
+5. **Character Breakdowns** (main cast with arcs)
+6. **Episode Ideas** (5-6 episode concepts)
+7. **World/Setting** (rules, visual style)
+8. **Comparable Shows** (tone and audience references)
+9. **Why Now?** (cultural relevance, market fit)
+
+## Format:
+- Write for streaming/network executives
+- Include episodic potential and "engine" of the show
+- Emphasize character growth and season-long arcs
+- Total length: 4-6 pages
+
+Generate the TV pitch bible now based on the project data provided.`
+    },
+    pitch_book: {
+        label: 'Book Proposal',
+        instruction: `[OUTPUT MODE: BOOK PROPOSAL]
+You are generating a professional BOOK PROPOSAL for this project.
+
+## Structure to Generate:
+1. **Title & Subtitle**
+2. **Genre & Category** (with comp titles)
+3. **Hook** (the compelling question/premise)
+4. **Synopsis** (complete plot summary, 2-3 pages)
+5. **Chapter Outline** (brief description of each chapter/section)
+6. **Character Profiles** (main characters)
+7. **Author Platform** (placeholder for author bio)
+8. **Target Audience** (reader demographics)
+9. **Market Analysis** (comparable titles, market positioning)
+10. **Sample Chapter** (offer to generate if requested)
+
+## Format:
+- Write for literary agents and publishers
+- Use third person for synopsis
+- Include word count estimate
+- Total length: 3-5 pages
+
+Generate the book proposal now based on the project data provided.`
+    },
+    treatment: {
+        label: 'Treatment',
+        instruction: `[OUTPUT MODE: STORY TREATMENT]
+You are generating a professional TREATMENT for this project.
+
+## Structure to Generate:
+1. **Title & Genre**
+2. **Logline**
+3. **Detailed Narrative** (the full story written in prose)
+   - Act 1: Setup (characters, world, inciting incident)
+   - Act 2: Confrontation (rising action, complications, midpoint)
+   - Act 3: Resolution (climax, falling action, ending)
+
+## Format:
+- Write in present tense, third person
+- Include all major scenes and plot points
+- Show character emotions and motivations
+- Describe key visual moments
+- Total length: 5-10 pages
+
+Generate the treatment now based on the project data provided.`
+    },
+    synopsis: {
+        label: 'Synopsis',
+        instruction: `[OUTPUT MODE: SYNOPSIS]
+You are generating a concise SYNOPSIS for this project.
+
+## Structure to Generate:
+1. **Opening Hook** (1 sentence)
+2. **Setup** (introduce protagonist, world, status quo)
+3. **Inciting Incident** (what disrupts the status quo)
+4. **Rising Action** (key conflicts and complications)
+5. **Climax** (the decisive moment)
+6. **Resolution** (how it ends, character transformation)
+
+## Format:
+- Write in present tense, third person
+- Cover beginning, middle, and end (including spoilers)
+- Focus on protagonist's journey
+- Total length: 1-2 pages
+
+Generate the synopsis now based on the project data provided.`
+    },
+    story_bible: {
+        label: 'Story Bible',
+        instruction: `[OUTPUT MODE: STORY BIBLE]
+You are generating a comprehensive STORY BIBLE for this project.
+
+## Structure to Generate:
+1. **Series/Project Overview**
+   - Logline, genre, tone, themes
+2. **World Building**
+   - Setting, time period, rules, history
+   - Maps/locations (descriptions)
+   - Technology/magic systems
+3. **Character Bible**
+   - Full profiles for all major characters
+   - Relationships and dynamics
+   - Character arcs
+4. **Plot Structure**
+   - Overall story arc
+   - Key plot points and timeline
+   - Subplots
+5. **Themes & Motifs**
+   - Central themes
+   - Recurring symbols
+   - Philosophical questions
+6. **Style Guide**
+   - Tone of voice
+   - Visual aesthetic
+   - Reference works
+7. **Appendices**
+   - Glossary of terms
+   - Timeline of events
+   - FAQ
+
+## Format:
+- Comprehensive reference document
+- Use headers and bullet points for easy navigation
+- Include cross-references between sections
+- Total length: 10-20 pages
+
+Generate the story bible now based on the project data provided.`
+    }
+};
+
+// Enhanced welcome message builder
+interface WelcomeMessageOptions {
+    entityName: string;
+    entityType: 'character' | 'world' | 'project';
+    progress?: number;
+    linkedWorld?: { id: string; name: string } | null;
+    linkedProject?: { id: string; name: string } | null;
+    linkedCharacters?: Array<{ id: string; name: string }>;
+    linkedWorlds?: Array<{ id: string; name: string }>;
+    missingFields?: string[];
+}
+
+function buildEnhancedWelcomeMessage(options: WelcomeMessageOptions): { content: string; choices: Choice[] } {
+    const { entityName, entityType, progress, linkedWorld, linkedProject, linkedCharacters, linkedWorlds, missingFields } = options;
+
+    let content = `Welcome! I'm here to help you develop **${entityName}**.`;
+
+    // Add progress indicator
+    if (progress !== undefined) {
+        const progressEmoji = progress >= 80 ? '🌟' : progress >= 50 ? '📈' : progress >= 25 ? '🔧' : '🌱';
+        content += `\n\n${progressEmoji} **Progress: ${progress}%**`;
+        if (progress < 100 && missingFields && missingFields.length > 0) {
+            content += ` — Consider filling in: ${missingFields.slice(0, 3).join(', ')}${missingFields.length > 3 ? '...' : ''}`;
+        } else if (progress >= 80) {
+            content += ` — Great progress! Your ${entityType} is well-developed.`;
+        }
+    }
+
+    // Add linked entities info
+    if (entityType === 'character') {
+        if (linkedWorld) {
+            content += `\n\n🌐 **World:** [${linkedWorld.name}](/worlds/${linkedWorld.id})`;
+        }
+        if (linkedProject) {
+            content += `\n📁 **Project:** [${linkedProject.name}](/projects/${linkedProject.id})`;
+        }
+        if (!linkedWorld && !linkedProject) {
+            content += `\n\n💡 *Tip: Link this character to a world or project for richer context.*`;
+        }
+    } else if (entityType === 'world') {
+        if (linkedProject) {
+            content += `\n\n📁 **Project:** [${linkedProject.name}](/projects/${linkedProject.id})`;
+        }
+        if (linkedCharacters && linkedCharacters.length > 0) {
+            const charNames = linkedCharacters.slice(0, 3).map(c => c.name).join(', ');
+            content += `\n👥 **Characters:** ${charNames}${linkedCharacters.length > 3 ? ` (+${linkedCharacters.length - 3} more)` : ''}`;
+        }
+    } else if (entityType === 'project') {
+        if (linkedCharacters && linkedCharacters.length > 0) {
+            content += `\n\n👥 **Characters:** ${linkedCharacters.length}`;
+        }
+        if (linkedWorlds && linkedWorlds.length > 0) {
+            content += `\n🌐 **Worlds:** ${linkedWorlds.length}`;
+        }
+    }
+
+    // Add what I can help with section
+    content += `\n\n**What would you like to do?**`;
+
+    // Build choices based on entity type and progress
+    let choices: Choice[] = [];
+
+    if (entityType === 'character') {
+        choices = [
+            { id: 'personality', label: '🧠 Refine Personality', description: 'Develop character traits' },
+            { id: 'backstory', label: '📜 Expand Backstory', description: 'Add more history' },
+            { id: 'arc', label: '📈 Develop Arc', description: 'Character growth journey' },
+        ];
+        if (progress && progress >= 50) {
+            choices.push({ id: 'scene', label: '🎬 Create Scene', description: 'Write a scene' });
+        } else {
+            choices.push({ id: 'suggestions', label: '💡 Get Suggestions', description: 'AI recommendations' });
+        }
+    } else if (entityType === 'world') {
+        choices = [
+            { id: 'expand', label: '📖 Expand Lore', description: 'Add more world details' },
+            { id: 'factions', label: '⚔️ Develop Factions', description: 'Create or refine factions' },
+            { id: 'locations', label: '🗺️ Add Locations', description: 'Create new places' },
+            { id: 'suggestions', label: '💡 Get Suggestions', description: 'AI recommendations' }
+        ];
+    } else if (entityType === 'project') {
+        choices = [
+            { id: 'plot', label: '📖 Develop Plot', description: 'Build story structure' },
+            { id: 'timeline', label: '📅 Add Events', description: 'Create timeline entries' },
+            { id: 'integrate', label: '🔗 Integrate Elements', description: 'Link characters/worlds' },
+            { id: 'suggestions', label: '💡 Get Suggestions', description: 'AI recommendations' }
+        ];
+    }
+
+    return { content, choices };
+}
+
 function ChatContent() {
     const {
         characters,
@@ -129,7 +395,10 @@ function ChatContent() {
         forkSession,
         addCharacterDocument,
         updateCharacterDocument,
-        characterDocuments
+        characterDocuments,
+        addProjectDocument,
+        updateProjectDocument,
+        projectDocuments
     } = useStore();
     const searchParams = useSearchParams();
     const mode = searchParams.get('mode');
@@ -137,6 +406,7 @@ function ChatContent() {
     const sessionIdParam = searchParams.get('sessionId');
     const targetIdParam = searchParams.get('id'); // ID if editing/workshop
     const parentWorldIdParam = searchParams.get('parentWorldId'); // For new characters
+    const outputTypeParam = searchParams.get('output'); // For project document generation (pitch, treatment, etc.)
 
 
 
@@ -221,6 +491,12 @@ What would you like to create today?`,
     const [saveDocumentTitle, setSaveDocumentTitle] = useState<string>('');
     const [saveDocumentContent, setSaveDocumentContent] = useState<string>('');
 
+    // Save project document modal state
+    const [showSaveProjectDocumentModal, setShowSaveProjectDocumentModal] = useState(false);
+    const [saveProjectDocumentTitle, setSaveProjectDocumentTitle] = useState<string>('');
+    const [saveProjectDocumentContent, setSaveProjectDocumentContent] = useState<string>('');
+    const [selectedProjectDocType, setSelectedProjectDocType] = useState<ProjectDocumentType | null>(null);
+
     // Session setup modal state
     const [showSessionSetup, setShowSessionSetup] = useState(false);
     const [sessionSetupMode, setSessionSetupMode] = useState<'script' | 'scene' | 'chat_with' | null>(null);
@@ -291,20 +567,12 @@ What would you like to create today?`,
 
     // Load API config from localStorage
     useEffect(() => {
-        const savedConfig = localStorage.getItem('5d-api-config');
-        if (savedConfig) {
-            try {
-                setApiConfig(JSON.parse(savedConfig));
-            } catch (e) {
-                console.error('Failed to parse config:', e);
-            }
-        }
+        const config = getApiConfig();
+        setApiConfig(config);
     }, []);
 
-    const currentApiKey = apiConfig?.provider === 'openai'
-        ? apiConfig?.openaiKey
-        : apiConfig?.anthropicKey;
-
+    // Get current API key using utility (checks admin keys first)
+    const currentApiKey = getChatApiKey(apiConfig?.provider || 'anthropic');
     const hasApiKey = !!currentApiKey;
 
     // Restore Chat Session
@@ -388,41 +656,72 @@ What would you like to create today?`,
                 }
                 // Set contextual welcome message based on entity type and mode
                 if (entity.type === 'world') {
-                    setMessages([{
-                        id: 'welcome',
-                        role: 'assistant',
-                        content: `Welcome! I'm here to help you develop **${entity.name}**.\n\nWhat would you like to add or change about this world? I can help you:\n\n• Expand world lore and history\n• Develop factions and societies\n• Create new locations\n• Refine the atmosphere and tone\n• Add custom sections\n\nOr I can provide suggestions based on what you already have. What would you like to work on?`,
-                        choices: [
-                            { id: 'expand', label: '📖 Expand Lore', description: 'Add more world details' },
-                            { id: 'factions', label: '⚔️ Develop Factions', description: 'Create or refine factions' },
-                            { id: 'locations', label: '🗺️ Add Locations', description: 'Create new places' },
-                            { id: 'suggestions', label: '💡 Get Suggestions', description: 'AI recommendations' }
-                        ]
-                    }]);
+                    const world = worlds.find(w => w.id === entity.id);
+                    const linkedProject = world?.projectId ? projects.find(p => p.id === world.projectId) : null;
+                    const linkedChars = characters.filter(c => c.worldId === entity.id);
+                    const { content, choices } = buildEnhancedWelcomeMessage({
+                        entityName: entity.name,
+                        entityType: 'world',
+                        progress: world?.progress,
+                        linkedProject: linkedProject ? { id: linkedProject.id, name: linkedProject.name } : null,
+                        linkedCharacters: linkedChars.map(c => ({ id: c.id, name: c.name }))
+                    });
+                    setMessages([{ id: 'welcome', role: 'assistant', content, choices }]);
                 } else if (entity.type === 'character') {
-                    setMessages([{
-                        id: 'welcome',
-                        role: 'assistant',
-                        content: `Welcome! I'm here to help you develop **${entity.name}**.\n\nWhat would you like to add or change about this character? I can help you:\n\n• Refine personality and motivations\n• Expand backstory and relationships\n• Develop character arc\n• Add custom sections\n• Create scenes with this character\n\nOr I can provide suggestions based on what you already have. What would you like to work on?`,
-                        choices: [
-                            { id: 'personality', label: '🧠 Refine Personality', description: 'Develop character traits' },
-                            { id: 'backstory', label: '📜 Expand Backstory', description: 'Add more history' },
-                            { id: 'relationships', label: '👥 Develop Relationships', description: 'Build connections' },
-                            { id: 'suggestions', label: '💡 Get Suggestions', description: 'AI recommendations' }
-                        ]
-                    }]);
+                    const char = characters.find(c => c.id === entity.id);
+                    const linkedWorld = char?.worldId ? worlds.find(w => w.id === char.worldId) : null;
+                    const linkedProject = char?.projectId ? projects.find(p => p.id === char.projectId) : null;
+                    const missingFields = char ? [
+                        !char.coreConcept && 'core concept',
+                        !char.backstoryProse && 'backstory',
+                        !char.personalityProse && 'personality',
+                        !char.arcProse && 'character arc'
+                    ].filter(Boolean) as string[] : [];
+                    const { content, choices } = buildEnhancedWelcomeMessage({
+                        entityName: entity.name,
+                        entityType: 'character',
+                        progress: char?.progress,
+                        linkedWorld: linkedWorld ? { id: linkedWorld.id, name: linkedWorld.name } : null,
+                        linkedProject: linkedProject ? { id: linkedProject.id, name: linkedProject.name } : null,
+                        missingFields
+                    });
+                    setMessages([{ id: 'welcome', role: 'assistant', content, choices }]);
                 } else if (entity.type === 'project') {
-                    setMessages([{
-                        id: 'welcome',
-                        role: 'assistant',
-                        content: `Welcome! I'm here to help you develop **${entity.name}**.\n\nWhat would you like to add or change about this project? I can help you:\n\n• Develop plot and timeline\n• Integrate characters and worlds\n• Organize story events\n• Track progress\n\nOr I can provide suggestions based on what you already have. What would you like to work on?`,
-                        choices: [
-                            { id: 'plot', label: '📖 Develop Plot', description: 'Build story structure' },
-                            { id: 'timeline', label: '📅 Add Events', description: 'Create timeline entries' },
-                            { id: 'integrate', label: '🔗 Integrate Elements', description: 'Link characters/worlds' },
-                            { id: 'suggestions', label: '💡 Get Suggestions', description: 'AI recommendations' }
-                        ]
-                    }]);
+                    const project = projects.find(p => p.id === entity.id);
+                    const linkedChars = characters.filter(c => c.projectId === entity.id);
+                    const linkedWorlds = worlds.filter(w => w.projectId === entity.id);
+
+                    // Check if there's an output type for document generation
+                    if (outputTypeParam && OUTPUT_TYPE_INSTRUCTIONS[outputTypeParam]) {
+                        const outputConfig = OUTPUT_TYPE_INSTRUCTIONS[outputTypeParam];
+                        const welcomeContent = `Ready to generate a **${outputConfig.label}** for **${entity.name}**.
+
+**Project Summary:** ${project?.summary || 'No summary available'}
+**Genre:** ${project?.genre || 'Not specified'}
+**Characters:** ${linkedChars.length > 0 ? linkedChars.map(c => c.name).join(', ') : 'None linked'}
+**Worlds:** ${linkedWorlds.length > 0 ? linkedWorlds.map(w => w.name).join(', ') : 'None linked'}
+
+Click **Generate** to create the document, or provide specific instructions for customization.`;
+
+                        setMessages([{
+                            id: 'welcome',
+                            role: 'assistant',
+                            content: welcomeContent,
+                            choices: [
+                                { id: 'generate', label: `Generate ${outputConfig.label}`, description: 'Create the full document' },
+                                { id: 'customize', label: 'Customize First', description: 'Add specific requirements' }
+                            ]
+                        }]);
+                    } else {
+                        const { content, choices } = buildEnhancedWelcomeMessage({
+                            entityName: entity.name,
+                            entityType: 'project',
+                            progress: project?.progress,
+                            linkedCharacters: linkedChars.map(c => ({ id: c.id, name: c.name })),
+                            linkedWorlds: linkedWorlds.map(w => ({ id: w.id, name: w.name }))
+                        });
+                        setMessages([{ id: 'welcome', role: 'assistant', content, choices }]);
+                    }
                 }
             }
         }
@@ -784,112 +1083,14 @@ What would you like to create today?`,
             content: messageContent.trim(),
         };
 
-        // Mode-specific system instructions
-        const getModeInstruction = () => {
-            const currentMode = mode || 'chat';
-            
-            // Add session setup config if available (this is in getModeInstruction, but setupContext is added later)
-            // This section is just for mode instructions, full setup context is added in sendMessage
-            
-            switch (currentMode) {
-                case 'character':
-                    return `
-                    [MODE: CHARACTER CREATOR]
-                    You are helping create or refine a character. Focus on:
-                    - Character development through 5 phases (Foundation, Personality, Backstory, Relationships, Arc)
-                    - Psychological depth and narrative structure
-                    - Use interactive questions to guide the user
-                    - When ready, output a save block with character data
-                    `;
-                case 'world':
-                    return `
-                    [MODE: WORLD BUILDER]
-                    You are helping create or refine a world/setting. Focus on:
-                    - World-building elements (geography, history, factions, magic/tech systems)
-                    - Atmosphere, tone, and cultural details
-                    - Ask questions ONE AT A TIME about different aspects
-                    - When ready, output a save block with world data
-                    `;
-                case 'project':
-                    return `
-                    [MODE: PROJECT MANAGER]
-                    You are helping manage a story project. Focus on:
-                    - Plot structure, timeline, and story events
-                    - Character and world integration
-                    - Project organization and progress tracking
-                    - When ready, output a save block with project data
-                    `;
-                case 'workshop':
-                    return `
-                    [MODE: WORKSHOP]
-                    You are deeply exploring a specific aspect of a character. Focus on:
-                    - Probing questions about the target section
-                    - Psychological analysis and narrative depth
-                    - Refinement and expansion of existing content
-                    - When ready, output a section-specific save block
-                    `;
-                case 'lore':
-                    return `
-                    [MODE: LORE EXPLORER]
-                    You are exploring and expanding world lore. Focus on:
-                    - Historical events, cultural details, and world depth
-                    - Connections between lore elements
-                    - Rich narrative descriptions
-                    `;
-                case 'scene':
-                    return `
-                    [MODE: SCENE WRITER / ROLEPLAY]
-                    You are creating interactive roleplay scenes. CRITICAL INSTRUCTIONS:
-                    - IMMEDIATELY begin writing the scene/roleplay when the user requests it
-                    - Use the FULL character and world data provided in [SESSION SETUP CONFIGURATION]
-                    - Write in character voice, staying true to their personality, background, and motivations
-                    - Include dialogue, actions, descriptions, and character interactions
-                    - Create an engaging scene that the user can interact with
-                    - DO NOT just acknowledge - ACTUALLY WRITE THE SCENE CONTENT
-                    - Format as narrative prose with character dialogue and actions
-                    - Make it immersive and detailed based on the world and character context
-                    `;
-                case 'script':
-                    return `
-                    [MODE: SCRIPT CREATION]
-                    You are creating scripts with multiple characters. CRITICAL INSTRUCTIONS:
-                    - This is SCRIPT CREATION mode, NOT roleplay mode. You are writing a script, not creating an interactive roleplay.
-                    - If the user says "Start creating the script" or similar, FIRST ask 3-5 focused questions about the script (genre, central conflict, key scenes, tone, etc.) with options if options are enabled
-                    - After gathering the script details through questions, THEN generate the full script content
-                    - Use the FULL character and world data provided in [SESSION SETUP CONFIGURATION]
-                    - Write in proper script format with character names, dialogue, and stage directions
-                    - Maintain character voice consistency based on their personality and background
-                    - Include scene descriptions, character actions, and dialogue
-                    - Format as:
-                      CHARACTER NAME
-                      (action or direction)
-                      Dialogue here.
-                      
-                      ANOTHER CHARACTER
-                      More dialogue.
-                    - Make it authentic to the characters' personalities and the world setting
-                    - DO NOT convert this to roleplay mode - you are writing a script, not creating interactive choices
-                    `;
-                case 'chat_with':
-                    return `
-                    [MODE: CHARACTER ROLEPLAY / CHAT WITH CHARACTER]
-                    You are embodying a character for interactive roleplay. CRITICAL INSTRUCTIONS:
-                    - Stay IN CHARACTER at all times - you ARE the character, not an AI assistant
-                    - Use the FULL character data provided in [LINKED CHARACTER - FULL CONTEXT] to inform your responses
-                    - Speak in the character's voice, using their vocabulary, speech patterns, and worldview
-                    - Reflect their personality, background, relationships, and motivations in every response
-                    - React authentically based on their flaws, fears, and desires
-                    - Do NOT break character or acknowledge you're an AI unless explicitly asked
-                    - Respond as if you are the character having a real conversation
-                    - Use the character's backstory and relationships to inform your responses
-                    `;
-                default:
-                    return '';
-            }
-        };
-        
-        const modeInstruction = getModeInstruction();
-        
+        // Mode-specific system instructions (from centralized registry)
+        const modeInstruction = getModeInstructionFromRegistry(mode as ChatMode);
+
+        // Output type instruction (for project documents like pitch, treatment, etc.)
+        const outputTypeInstruction = outputTypeParam && OUTPUT_TYPE_INSTRUCTIONS[outputTypeParam]
+            ? OUTPUT_TYPE_INSTRUCTIONS[outputTypeParam].instruction
+            : '';
+
         // Add session setup config if available
         let setupContext = '';
         if (sessionSetupConfig && (mode === 'script' || mode === 'scene')) {
@@ -903,8 +1104,10 @@ What would you like to create today?`,
                 
                 setupContext += `\nSELECTED CHARACTERS (${selectedChars.length}):\n`;
                 selectedChars.forEach((char, idx) => {
-                    setupContext += `\nCharacter ${idx + 1}: ${char.name}\n`;
-                    setupContext += `FULL CHARACTER DATA:\n${JSON.stringify(char, null, 2)}\n`;
+                    if (char) {
+                        setupContext += `\nCharacter ${idx + 1}: ${char.name}\n`;
+                        setupContext += `FULL CHARACTER DATA:\n${JSON.stringify(char, null, 2)}\n`;
+                    }
                 });
             }
             
@@ -920,8 +1123,10 @@ What would you like to create today?`,
                 
                 setupContext += `\nSELECTED WORLDS (${selectedWorlds.length}):\n`;
                 selectedWorlds.forEach((world, idx) => {
-                    setupContext += `\nWorld ${idx + 1}: ${world.name}\n`;
-                    setupContext += `FULL WORLD DATA:\n${JSON.stringify(world, null, 2)}\n`;
+                    if (world) {
+                        setupContext += `\nWorld ${idx + 1}: ${world.name}\n`;
+                        setupContext += `FULL WORLD DATA:\n${JSON.stringify(world, null, 2)}\n`;
+                    }
                 });
             }
             
@@ -944,8 +1149,9 @@ What would you like to create today?`,
         
         const systemInstruction = `
         You are the 5D Character Creator AI.
-        
+
         ${modeInstruction}${setupContext}
+        ${outputTypeInstruction}
         
         CRITICAL: To update the Character or World, output a JSON block.
         
@@ -1038,11 +1244,10 @@ What would you like to create today?`,
         let effectiveInstruction: string;
         if (activePersona && mode === 'chat_with') {
             // Combine persona with mode instruction and setup context
-            const modeInstruction = getModeInstruction();
-            effectiveInstruction = `${activePersona}\n\n${modeInstruction}${setupContext}`;
+            effectiveInstruction = `${activePersona}\n\n${modeInstruction}${setupContext}${outputTypeInstruction}`;
         } else if (activePersona) {
             // For other personas (workshop mode, etc), use persona but add setup context
-            effectiveInstruction = `${activePersona}${setupContext}`;
+            effectiveInstruction = `${activePersona}${setupContext}${outputTypeInstruction}`;
         } else {
             // Normal mode - use system instruction with mode and setup context
             effectiveInstruction = systemInstruction;
@@ -1120,6 +1325,24 @@ What would you like to create today?`,
         setError(null);
 
         try {
+            // Prepare structured context for API context budget system
+            const structuredContext: Record<string, any> = {};
+            if (linkedEntity) {
+                if (linkedEntity.type === 'character') {
+                    const char = characters.find(c => c.id === linkedEntity.id);
+                    if (char) structuredContext.linkedCharacter = char;
+                } else if (linkedEntity.type === 'world') {
+                    const world = worlds.find(w => w.id === linkedEntity.id);
+                    if (world) structuredContext.linkedWorld = world;
+                } else if (linkedEntity.type === 'project') {
+                    const project = projects.find(p => p.id === linkedEntity.id);
+                    if (project) structuredContext.linkedProject = project;
+                }
+            }
+            if (modeInstruction) {
+                structuredContext.modeInstruction = modeInstruction;
+            }
+
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1130,6 +1353,8 @@ What would you like to create today?`,
                     })),
                     provider: apiConfig?.provider || 'anthropic',
                     apiKey: currentApiKey,
+                    // Pass structured context for API context budget management
+                    ...structuredContext
                 }),
             });
 
@@ -1282,7 +1507,9 @@ What would you like to create today?`,
                                     ...updatedSessionData,
                                     messages: finalMessages
                                 };
-                                const updatedContent = sessionToDocumentContent(updatedSession, existingDoc.type);
+                                const updatedContent = existingDoc.type === 'script' || existingDoc.type === 'roleplay' 
+                                    ? sessionToDocumentContent(updatedSession, existingDoc.type)
+                                    : existingDoc.content;
                                 updateCharacterDocument(existingDoc.id, {
                                     content: updatedContent,
                                     updatedAt: now
@@ -2014,13 +2241,29 @@ What would you like to create today?`,
         }
     };
 
-    const handleChoiceSelect = (choice: Choice | Choice[]) => {
-        // Send choice as user message
-        if (Array.isArray(choice)) {
-            sendMessage(choice.map(c => c.label).join(', '));
-        } else {
-            sendMessage(choice.label);
+    const handleChoiceSelect = (choice: Choice | Choice[], context?: ChoiceContext) => {
+        // Build the selection text
+        const selectedText = Array.isArray(choice)
+            ? choice.map(c => c.label).join(', ')
+            : choice.label;
+
+        // Include context about the selection for the AI
+        let contextPrefix = '';
+        if (context) {
+            const parts: string[] = [];
+            if (context.questionText) {
+                parts.push(`Question: "${context.questionText}"`);
+            }
+            if (context.allOptions && context.allOptions.length > 0) {
+                parts.push(`Available options were: ${context.allOptions.join(' | ')}`);
+            }
+            if (parts.length > 0) {
+                contextPrefix = `[USER SELECTED from options - ${parts.join('. ')}]\n`;
+            }
         }
+
+        // Send with context prefix so AI knows this was a selection, not typed text
+        sendMessage(contextPrefix + selectedText);
     };
 
     // New Reload Handler
@@ -2274,6 +2517,22 @@ What would you like to create today?`,
                         worlds={worlds.map(w => ({ id: w.id, name: w.name }))}
                         projects={projects.map(p => ({ id: p.id, name: p.name }))}
                     />
+
+                    {/* Mode Presets - shown when in session setup mode or has active config */}
+                    {(sessionSetupMode || sessionSetupConfig) && (
+                        <ModePresetManager
+                            currentMode={(sessionSetupMode || mode || 'chat') as ChatMode}
+                            currentConfig={sessionSetupConfig}
+                            onLoadPreset={(preset) => {
+                                // Load preset configuration
+                                if (preset.sessionConfig) {
+                                    setSessionSetupConfig(preset.sessionConfig as SessionSetupConfig);
+                                }
+                            }}
+                            compact
+                        />
+                    )}
+
                     <div className="h-4 w-px bg-border" />
                     <Button
                         variant="ghost"
@@ -2299,6 +2558,34 @@ What would you like to create today?`,
                                     }
                                 }}
                                 title="Save as Document"
+                            >
+                                <FileText className="h-4 w-4" />
+                                <span className="text-xs hidden md:inline">Save Doc</span>
+                            </Button>
+                            <div className="h-4 w-px bg-border mx-1" />
+                        </>
+                    )}
+                    {/* Save as Project Document button for project mode with output type */}
+                    {mode === 'project' && linkedEntity?.type === 'project' && activeSessionId && outputTypeParam && OUTPUT_TYPE_TO_DOC_TYPE[outputTypeParam] && (
+                        <>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 gap-2"
+                                onClick={() => {
+                                    const session = chatSessions.find(s => s.id === activeSessionId);
+                                    if (session && linkedEntity) {
+                                        const docType = OUTPUT_TYPE_TO_DOC_TYPE[outputTypeParam];
+                                        setSelectedProjectDocType(docType);
+                                        // Extract content from last assistant message
+                                        const lastAssistantMessage = [...session.messages].reverse().find(m => m.role === 'assistant');
+                                        const content = lastAssistantMessage?.content || sessionToDocumentContent(session, 'script');
+                                        setSaveProjectDocumentContent(content);
+                                        setSaveProjectDocumentTitle(`${OUTPUT_TYPE_INSTRUCTIONS[outputTypeParam]?.label || 'Document'} - ${linkedEntity.name}`);
+                                        setShowSaveProjectDocumentModal(true);
+                                    }
+                                }}
+                                title="Save as Project Document"
                             >
                                 <FileText className="h-4 w-4" />
                                 <span className="text-xs hidden md:inline">Save Doc</span>
@@ -2456,7 +2743,16 @@ What would you like to create today?`,
                                     </div>
                                 )}
                                 <div className="text-sm leading-relaxed">{renderMessage(message)}</div>
-                                {message.role === 'assistant' && message.choices && message.choices.length > 0 && <ChoiceChips choices={message.choices} onSelect={handleChoiceSelect} />}
+                                {message.role === 'assistant' && message.choices && message.choices.length > 0 && (
+                                    <ChoiceChips
+                                        choices={message.choices}
+                                        onSelect={handleChoiceSelect}
+                                        messageContext={{
+                                            messageId: message.id,
+                                            questionText: message.content.split('\n')[0].substring(0, 200) // First line as question context
+                                        }}
+                                    />
+                                )}
                                 <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/5">
                                     <span className="text-[10px] text-muted-foreground">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                     {message.role === 'assistant' && message.id !== 'welcome' && (
@@ -3032,6 +3328,58 @@ Extract and format the ${docType === 'script' ? 'script' : 'roleplay'} content:`
                         documentType={docType}
                         characterId={linkedEntity.id}
                         characterName={character?.name || linkedEntity.name}
+                    />
+                );
+            })()}
+
+            {/* Save Project Document Modal */}
+            {showSaveProjectDocumentModal && activeSessionId && linkedEntity?.type === 'project' && selectedProjectDocType && (() => {
+                const session = chatSessions.find(s => s.id === activeSessionId);
+                if (!session) return null;
+                
+                const project = projects.find(p => p.id === linkedEntity.id);
+                
+                return (
+                    <SaveProjectDocumentModal
+                        isOpen={showSaveProjectDocumentModal}
+                        onClose={() => {
+                            setShowSaveProjectDocumentModal(false);
+                            setSaveProjectDocumentTitle('');
+                            setSaveProjectDocumentContent('');
+                            setSelectedProjectDocType(null);
+                        }}
+                        onSave={(doc) => {
+                            // Check if document already exists for this session
+                            const existingDocs = projectDocuments.filter(d => 
+                                d.metadata?.sessionId === activeSessionId && d.type === selectedProjectDocType
+                            );
+                            
+                            if (existingDocs.length > 0) {
+                                // Update existing document
+                                updateProjectDocument(existingDocs[0].id, doc);
+                                setToast({
+                                    message: `Document "${doc.title}" updated!`,
+                                    type: 'success'
+                                });
+                            } else {
+                                // Create new document
+                                addProjectDocument(doc);
+                                setToast({
+                                    message: `Document "${doc.title}" saved!`,
+                                    type: 'success'
+                                });
+                            }
+                            setTimeout(() => setToast(null), 3000);
+                            setSaveProjectDocumentTitle('');
+                            setSaveProjectDocumentContent('');
+                            setSelectedProjectDocType(null);
+                            setShowSaveProjectDocumentModal(false);
+                        }}
+                        defaultTitle={saveProjectDocumentTitle}
+                        defaultContent={saveProjectDocumentContent}
+                        documentType={selectedProjectDocType}
+                        projectId={linkedEntity.id}
+                        projectName={project?.name || linkedEntity.name}
                     />
                 );
             })()}

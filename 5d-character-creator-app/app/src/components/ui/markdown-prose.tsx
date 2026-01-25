@@ -20,8 +20,8 @@ function extractTextFromChildren(children: React.ReactNode): string {
             text += child;
         } else if (typeof child === 'number') {
             text += String(child);
-        } else if (React.isValidElement(child) && child.props.children) {
-            text += extractTextFromChildren(child.props.children);
+        } else if (React.isValidElement(child) && (child.props as { children?: React.ReactNode })?.children) {
+            text += extractTextFromChildren((child.props as { children: React.ReactNode }).children);
         } else if (Array.isArray(child)) {
             text += extractTextFromChildren(child);
         }
@@ -85,14 +85,15 @@ function MentionLink({ type, id, children, hideSymbol = false }: { type: string;
             }
             
             if (React.isValidElement(node)) {
-                const processedChildren = node.props.children 
-                    ? (Array.isArray(node.props.children)
-                        ? node.props.children.map(processNode)
-                        : processNode(node.props.children))
-                    : node.props.children;
+                const nodeProps = node.props as { children?: React.ReactNode };
+                const processedChildren = nodeProps.children
+                    ? (Array.isArray(nodeProps.children)
+                        ? nodeProps.children.map(processNode)
+                        : processNode(nodeProps.children))
+                    : nodeProps.children;
                 
-                return React.cloneElement(node, {
-                    ...node.props,
+                return React.cloneElement(node as React.ReactElement<any>, {
+                    ...nodeProps,
                     children: processedChildren
                 });
             }
@@ -135,7 +136,7 @@ export function MarkdownProse({ content, className, compact = false, hideMention
         }
         // If it's an array or object, try to stringify it
         if (Array.isArray(content)) {
-            return content.map(item => 
+            return (content as unknown[]).map(item => 
                 typeof item === 'string' ? item : JSON.stringify(item)
             ).join('');
         }

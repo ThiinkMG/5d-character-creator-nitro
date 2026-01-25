@@ -13,16 +13,38 @@ import {
     FileText,
     Globe,
     User,
-    AlertTriangle
+    AlertTriangle,
+    Folder,
+    MessageSquare,
+    Image as ImageIcon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 
 export default function TrashPage() {
     const router = useRouter();
-    const { worlds, updateWorld } = useStore();
-    const { characters, updateCharacter } = useCharacterStore();
-    const [activeTab, setActiveTab] = useState<'all' | 'characters' | 'worlds'>('all');
+    const { 
+        worlds, 
+        updateWorld, 
+        characters, 
+        updateCharacter,
+        projects,
+        chatSessions,
+        characterDocuments,
+        projectDocuments,
+        trash,
+        restoreFromTrash,
+        removeFromTrash,
+        emptyTrash,
+        cleanupOldTrash,
+        addCharacter,
+        addWorld,
+        addProject,
+        addChatSession,
+        addCharacterDocument,
+        addProjectDocument
+    } = useStore();
+    const [activeTab, setActiveTab] = useState<'all' | 'characters' | 'worlds' | 'projects' | 'documents' | 'chats'>('all');
 
     // Auto-delete items older than 30 days
     useEffect(() => {
@@ -116,15 +138,22 @@ export default function TrashPage() {
             }
         });
 
-        return items.sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
+        return items.sort((a, b) => {
+            const dateA = a.deletedAt instanceof Date ? a.deletedAt : new Date(a.deletedAt);
+            const dateB = b.deletedAt instanceof Date ? b.deletedAt : new Date(b.deletedAt);
+            return dateB.getTime() - dateA.getTime();
+        });
     };
 
     const trashedItems = getTrashedItems();
 
     const filteredItems = trashedItems.filter(item => {
         if (activeTab === 'all') return true;
-        if (activeTab === 'characters') return item.parentType === 'character';
-        if (activeTab === 'worlds') return item.parentType === 'world';
+        if (activeTab === 'characters') return item.type === 'character' || item.parentType === 'character' || item.type === 'character_section';
+        if (activeTab === 'worlds') return item.type === 'world' || item.parentType === 'world' || item.type === 'world_section';
+        if (activeTab === 'projects') return item.type === 'project';
+        if (activeTab === 'documents') return item.type === 'character_document' || item.type === 'project_document';
+        if (activeTab === 'chats') return item.type === 'chat_session';
         return true;
     });
 
@@ -163,24 +192,34 @@ export default function TrashPage() {
 
     const handleDeleteForever = (item: any) => {
         if (confirm("Are you sure you want to permanently delete this item? This cannot be undone.")) {
-            if (item.parentType === 'character') {
-                const char = characters.find(c => c.id === item.parentId);
-                if (char) {
-                    const newTrash = char.trashedSections?.filter(s => s.id !== item.id) || [];
-                    updateCharacter(char.id, { trashedSections: newTrash });
+            // Handle legacy sections
+            if (item.type === 'character_section' || item.type === 'world_section') {
+                if (item.parentType === 'character') {
+                    const char = characters.find(c => c.id === item.parentId);
+                    if (char) {
+                        const newTrash = char.trashedSections?.filter(s => s.id !== item.id) || [];
+                        updateCharacter(char.id, { trashedSections: newTrash });
+                    }
+                } else if (item.parentType === 'world') {
+                    const world = worlds.find(w => w.id === item.parentId);
+                    if (world) {
+                        const newTrash = world.trashedSections?.filter(s => s.id !== item.id) || [];
+                        updateWorld(world.id, { trashedSections: newTrash });
+                    }
                 }
-            } else if (item.parentType === 'world') {
-                const world = worlds.find(w => w.id === item.parentId);
-                if (world) {
-                    const newTrash = world.trashedSections?.filter(s => s.id !== item.id) || [];
-                    updateWorld(world.id, { trashedSections: newTrash });
-                }
+            } else {
+                // Remove from global trash
+                removeFromTrash(item.id);
             }
         }
     };
 
     const handleEmptyTrash = () => {
         if (confirm("Are you sure you want to delete ALL items in the trash? This cannot be undone.")) {
+            // Clear global trash
+            emptyTrash();
+            
+            // Clear legacy sections
             characters.forEach(char => {
                 if (char.trashedSections?.length) {
                     updateCharacter(char.id, { trashedSections: [] });
@@ -212,7 +251,7 @@ export default function TrashPage() {
                             Trash Bin
                         </h1>
                         <p className="text-white/60">
-                            Restore deleted sections or remove them permanently. Items are automatically deleted after 30 days.
+                            Restore deleted items or remove them permanently. Items are automatically deleted after 30 days.
                         </p>
                     </div>
 
@@ -229,7 +268,7 @@ export default function TrashPage() {
                 </div>
 
                 {/* Filters */}
-                <div className="flex items-center gap-2 border-b border-white/10 pb-4">
+                <div className="flex items-center gap-2 border-b border-white/10 pb-4 flex-wrap">
                     <button
                         onClick={() => setActiveTab('all')}
                         className={cn(
@@ -246,7 +285,7 @@ export default function TrashPage() {
                         className={cn(
                             "px-4 py-2 rounded-lg text-sm font-medium transition-all",
                             activeTab === 'characters'
-                                ? "bg-violet-500/20 text-violet-300"
+                                ? "bg-primary/20 text-primary"
                                 : "text-white/40 hover:text-white hover:bg-white/5"
                         )}
                     >
@@ -257,11 +296,44 @@ export default function TrashPage() {
                         className={cn(
                             "px-4 py-2 rounded-lg text-sm font-medium transition-all",
                             activeTab === 'worlds'
-                                ? "bg-blue-500/20 text-blue-300"
+                                ? "bg-violet-500/20 text-violet-300"
                                 : "text-white/40 hover:text-white hover:bg-white/5"
                         )}
                     >
                         Worlds
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('projects')}
+                        className={cn(
+                            "px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                            activeTab === 'projects'
+                                ? "bg-cyan-500/20 text-cyan-300"
+                                : "text-white/40 hover:text-white hover:bg-white/5"
+                        )}
+                    >
+                        Projects
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('documents')}
+                        className={cn(
+                            "px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                            activeTab === 'documents'
+                                ? "bg-blue-500/20 text-blue-300"
+                                : "text-white/40 hover:text-white hover:bg-white/5"
+                        )}
+                    >
+                        Documents
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('chats')}
+                        className={cn(
+                            "px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                            activeTab === 'chats'
+                                ? "bg-amber-500/20 text-amber-300"
+                                : "text-white/40 hover:text-white hover:bg-white/5"
+                        )}
+                    >
+                        Chat Sessions
                     </button>
                 </div>
 
@@ -286,34 +358,67 @@ export default function TrashPage() {
                                 {/* Icon & Context */}
                                 <div className={cn(
                                     "w-12 h-12 rounded-lg flex items-center justify-center shrink-0 border",
-                                    item.parentType === 'character'
+                                    item.type === 'character' || item.type === 'character_section' || item.parentType === 'character'
+                                        ? "bg-primary/10 border-primary/20 text-primary"
+                                        : item.type === 'world' || item.type === 'world_section' || item.parentType === 'world'
                                         ? "bg-violet-500/10 border-violet-500/20 text-violet-400"
-                                        : "bg-blue-500/10 border-blue-500/20 text-blue-400"
+                                        : item.type === 'project'
+                                        ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400"
+                                        : item.type === 'character_document' || item.type === 'project_document'
+                                        ? "bg-blue-500/10 border-blue-500/20 text-blue-400"
+                                        : item.type === 'chat_session'
+                                        ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                                        : "bg-white/10 border-white/20 text-white/40"
                                 )}>
-                                    {item.parentType === 'character' ? <User className="w-6 h-6" /> : <Globe className="w-6 h-6" />}
+                                    {item.type === 'character' || item.type === 'character_section' || item.parentType === 'character' ? <User className="w-6 h-6" /> :
+                                        item.type === 'world' || item.type === 'world_section' || item.parentType === 'world' ? <Globe className="w-6 h-6" /> :
+                                        item.type === 'project' ? <Folder className="w-6 h-6" /> :
+                                        item.type === 'character_document' || item.type === 'project_document' ? <FileText className="w-6 h-6" /> :
+                                        item.type === 'chat_session' ? <MessageSquare className="w-6 h-6" /> :
+                                        <FileText className="w-6 h-6" />}
                                 </div>
 
                                 {/* Content Info */}
                                 <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-1">
+                                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                                         <h3 className="text-base font-semibold text-white truncate">
-                                            {item.title || "Untitled Section"}
+                                            {item.name || item.title || "Untitled"}
                                         </h3>
                                         <span className="px-2 py-0.5 rounded-full text-[10px] uppercase font-bold tracking-wider bg-white/10 text-white/50">
-                                            {item.parentType}
+                                            {item.type === 'character_section' ? 'Section' :
+                                                item.type === 'world_section' ? 'Section' :
+                                                item.type === 'character_document' ? 'Document' :
+                                                item.type === 'project_document' ? 'Document' :
+                                                item.type === 'chat_session' ? 'Chat' :
+                                                item.type}
                                         </span>
+                                        {(item.role || item.archetype || item.genre || item.tone) && (
+                                            <span className="px-2 py-0.5 rounded text-[10px] bg-white/5 text-white/60">
+                                                {item.role || item.archetype || item.genre || item.tone}
+                                            </span>
+                                        )}
                                     </div>
-                                    <div className="flex items-center gap-4 text-xs text-white/40">
-                                        <span className="flex items-center gap-1">
-                                            <FileText className="w-3 h-3" />
-                                            From: <span className="text-white/60">{item.parentName}</span>
-                                        </span>
+                                    {item.description && (
+                                        <p className="text-sm text-white/60 line-clamp-1 mb-2">
+                                            {item.description}
+                                        </p>
+                                    )}
+                                    <div className="flex items-center gap-4 text-xs text-white/40 flex-wrap">
+                                        {(item.parentName || item.characterId || item.projectId) && (
+                                            <span className="flex items-center gap-1">
+                                                <FileText className="w-3 h-3" />
+                                                {item.parentName ? `From: ${item.parentName}` :
+                                                    item.characterId ? `Character: ${characters.find(c => c.id === item.characterId)?.name || item.characterId}` :
+                                                    item.projectId ? `Project: ${projects.find(p => p.id === item.projectId)?.name || item.projectId}` :
+                                                    ''}
+                                            </span>
+                                        )}
                                         <span className="flex items-center gap-1">
                                             <Calendar className="w-3 h-3" />
-                                            Deleted: {new Date(item.deletedAt).toLocaleDateString()}
+                                            Deleted: {(item.deletedAt instanceof Date ? item.deletedAt : new Date(item.deletedAt)).toLocaleDateString()}
                                         </span>
                                         {(() => {
-                                            const deletedDate = new Date(item.deletedAt);
+                                            const deletedDate = item.deletedAt instanceof Date ? item.deletedAt : new Date(item.deletedAt);
                                             const thirtyDaysAgo = new Date();
                                             thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
                                             const daysUntilDeletion = Math.ceil((thirtyDaysAgo.getTime() - deletedDate.getTime()) / (1000 * 60 * 60 * 24));

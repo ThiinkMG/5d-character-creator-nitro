@@ -267,7 +267,7 @@ export function ProseSection({
                         multiline
                         as="div"
                         className="text-base leading-relaxed text-white/85"
-                        renderView={(val) => <MarkdownProse content={val} className="text-white/85 prose-p:my-2 prose-headings:mt-4 prose-headings:mb-2 prose-headings:text-white/90" />}
+                        renderView={(val) => <MarkdownProse content={val} className="text-white/85 prose-p:my-2 prose-headings:mt-4 prose-headings:mb-2 prose-headings:text-white/90" hideMentionSymbol={true} />}
                         suggestion={suggestion}
                         onAcceptSuggestion={onAcceptSuggestion}
                         onRejectSuggestion={onRejectSuggestion}

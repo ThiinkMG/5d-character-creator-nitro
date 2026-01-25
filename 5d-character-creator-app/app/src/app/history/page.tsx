@@ -134,7 +134,9 @@ export default function HistoryPage() {
     };
 
     const handleSessionClick = (id: string) => {
-        router.push(`/chat?sessionId=${id}`);
+        if (id) {
+            router.push(`/chat?sessionId=${id}`);
+        }
     };
 
     const formatDate = (date: Date) => {

@@ -19,8 +19,12 @@ import {
     Calendar,
     FileImage,
     FileVideo,
-    MoreVertical
+    FileText,
+    MoreVertical,
+    ExternalLink
 } from 'lucide-react';
+import Link from 'next/link';
+import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_COLORS, PROJECT_DOCUMENT_TYPE_LABELS, PROJECT_DOCUMENT_TYPE_COLORS } from '@/types/document';
 import { cn } from '@/lib/utils';
 import JSZip from 'jszip';
 import { DeleteWarningDialog } from '@/components/ui/delete-warning-dialog';
@@ -28,7 +32,7 @@ import { DeleteWarningDialog } from '@/components/ui/delete-warning-dialog';
 type MediaItem = {
     id: string;
     url: string;
-    type: 'image' | 'video';
+    type: 'image' | 'video' | 'document';
     name?: string;
     altText?: string;
     caption?: string;
@@ -37,14 +41,18 @@ type MediaItem = {
     sourceName: string;
     location: string; // e.g., "Header", "Infobox", "Foundation Section", "Gallery Section"
     uploadedAt?: Date;
+    // Document-specific fields
+    documentType?: string;
+    documentContent?: string;
+    documentLink?: string;
 };
 
 type SortOption = 'name' | 'date' | 'source' | 'type';
-type FilterOption = 'all' | 'images' | 'videos' | 'characters' | 'worlds' | 'projects';
+type FilterOption = 'all' | 'images' | 'videos' | 'documents' | 'characters' | 'worlds' | 'projects';
 type ViewMode = 'grid' | 'list';
 
 export default function MediaPage() {
-    const { characters, worlds, projects, updateCharacter, updateWorld } = useStore();
+    const { characters, worlds, projects, characterDocuments, projectDocuments, updateCharacter, updateWorld, deleteCharacterDocument, deleteProjectDocument } = useStore();
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState<SortOption>('date');
     const [filterBy, setFilterBy] = useState<FilterOption>('all');
@@ -203,8 +211,46 @@ export default function MediaPage() {
             // Add project images if they exist
         });
 
+        // Character Documents
+        characterDocuments.forEach((doc) => {
+            const character = characters.find(c => c.id === doc.characterId);
+            items.push({
+                id: `doc-char-${doc.id}`,
+                url: doc.thumbnail || doc.image || '',
+                type: 'document',
+                name: doc.title,
+                sourceType: 'character',
+                sourceId: doc.characterId,
+                sourceName: character?.name || 'Unknown Character',
+                location: DOCUMENT_TYPE_LABELS[doc.type] || doc.type,
+                uploadedAt: doc.createdAt instanceof Date ? doc.createdAt : new Date(doc.createdAt),
+                documentType: doc.type,
+                documentContent: doc.content,
+                documentLink: `/characters/${doc.characterId}?tab=documents&doc=${doc.id}`
+            });
+        });
+
+        // Project Documents
+        projectDocuments.forEach((doc) => {
+            const project = projects.find(p => p.id === doc.projectId);
+            items.push({
+                id: `doc-proj-${doc.id}`,
+                url: doc.thumbnail || doc.image || '',
+                type: 'document',
+                name: doc.title,
+                sourceType: 'project',
+                sourceId: doc.projectId,
+                sourceName: project?.name || 'Unknown Project',
+                location: PROJECT_DOCUMENT_TYPE_LABELS[doc.type] || doc.type,
+                uploadedAt: doc.createdAt instanceof Date ? doc.createdAt : new Date(doc.createdAt),
+                documentType: doc.type,
+                documentContent: doc.content,
+                documentLink: `/projects/${doc.projectId}?tab=documents&doc=${doc.id}`
+            });
+        });
+
         return items;
-    }, [characters, worlds, projects]);
+    }, [characters, worlds, projects, characterDocuments, projectDocuments]);
 
     // Filter and sort media items
     const filteredAndSortedItems = useMemo(() => {
@@ -227,6 +273,8 @@ export default function MediaPage() {
             filtered = filtered.filter((item) => item.type === 'image');
         } else if (filterBy === 'videos') {
             filtered = filtered.filter((item) => item.type === 'video');
+        } else if (filterBy === 'documents') {
+            filtered = filtered.filter((item) => item.type === 'document');
         } else if (filterBy === 'characters') {
             filtered = filtered.filter((item) => item.sourceType === 'character');
         } else if (filterBy === 'worlds') {
@@ -585,6 +633,16 @@ export default function MediaPage() {
                 updateWorld(world.id, { imageUrl: null as any });
             }
         }
+
+        // Handle document deletion
+        if (item.type === 'document') {
+            const docId = item.id.replace('doc-char-', '').replace('doc-proj-', '');
+            if (item.id.startsWith('doc-char-')) {
+                deleteCharacterDocument(docId);
+            } else if (item.id.startsWith('doc-proj-')) {
+                deleteProjectDocument(docId);
+            }
+        }
     };
 
     const handleDeleteItem = (itemId: string) => {
@@ -636,8 +694,8 @@ export default function MediaPage() {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
                 {/* Header */}
                 <div className="mb-8">
-                    <h1 className="text-3xl font-bold text-white mb-2">Media Library</h1>
-                    <p className="text-white/60">Manage all your images and videos</p>
+                    <h1 className="text-3xl font-bold text-white mb-2">Media & Files</h1>
+                    <p className="text-white/60">Manage all your images, videos, and documents</p>
                 </div>
 
                 {/* Toolbar */}
@@ -662,9 +720,10 @@ export default function MediaPage() {
                                 onChange={(e) => setFilterBy(e.target.value as FilterOption)}
                                 className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-primary/50"
                             >
-                                <option value="all">All Media</option>
+                                <option value="all">All Files</option>
                                 <option value="images">Images Only</option>
                                 <option value="videos">Videos Only</option>
+                                <option value="documents">Documents Only</option>
                                 <option value="characters">From Characters</option>
                                 <option value="worlds">From Worlds</option>
                                 <option value="projects">From Projects</option>
@@ -848,6 +907,13 @@ function MediaCard({
     contextMenuPosition: { x: number; y: number } | null;
     onCloseContextMenu: () => void;
 }) {
+    // Get document type badge color
+    const getDocTypeBadge = () => {
+        if (item.type !== 'document' || !item.documentType) return null;
+        const charColors = DOCUMENT_TYPE_COLORS[item.documentType as keyof typeof DOCUMENT_TYPE_COLORS];
+        const projColors = PROJECT_DOCUMENT_TYPE_COLORS[item.documentType as keyof typeof PROJECT_DOCUMENT_TYPE_COLORS];
+        return charColors || projColors || 'bg-gray-500/20 text-gray-400';
+    };
     if (viewMode === 'list') {
         return (
             <div
@@ -862,18 +928,31 @@ function MediaCard({
             >
                 <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-black/20 flex-shrink-0">
                     {item.type === 'image' ? (
-                        <img 
-                            src={item.url} 
-                            alt={item.altText || item.name} 
+                        <img
+                            src={item.url}
+                            alt={item.altText || item.name}
                             className="w-full h-full object-cover pointer-events-none"
                             draggable={false}
                             onContextMenu={(e) => e.preventDefault()}
                         />
-                    ) : (
+                    ) : item.type === 'video' ? (
                         <div className="w-full h-full flex items-center justify-center">
                             <Video className="w-6 h-6 text-white/40" />
                         </div>
-                    )}
+                    ) : item.type === 'document' ? (
+                        item.url ? (
+                            <img
+                                src={item.url}
+                                alt={item.name}
+                                className="w-full h-full object-cover pointer-events-none"
+                                draggable={false}
+                            />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-violet-500/20 to-purple-500/20">
+                                <FileText className="w-6 h-6 text-violet-400" />
+                            </div>
+                        )
+                    ) : null}
                     {isSelected && (
                         <div className="absolute inset-0 bg-primary/50 flex items-center justify-center">
                             <CheckSquare className="w-6 h-6 text-white" />
@@ -890,6 +969,11 @@ function MediaCard({
                     )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
+                    {item.type === 'document' && item.documentType && (
+                        <span className={cn("px-2 py-1 rounded text-xs font-medium", getDocTypeBadge())}>
+                            {item.location}
+                        </span>
+                    )}
                     <span className={cn(
                         "px-2 py-1 rounded text-xs font-medium",
                         item.sourceType === 'character' && "bg-blue-500/20 text-blue-300",
@@ -898,18 +982,32 @@ function MediaCard({
                     )}>
                         {item.sourceType}
                     </span>
-                    <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onDownload();
-                        }}
-                        className="h-8 w-8 p-0"
-                        title="Download"
-                    >
-                        <Download className="w-4 h-4" />
-                    </Button>
+                    {item.type === 'document' && item.documentLink ? (
+                        <Link href={item.documentLink}>
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => e.stopPropagation()}
+                                className="h-8 w-8 p-0"
+                                title="Open Document"
+                            >
+                                <ExternalLink className="w-4 h-4" />
+                            </Button>
+                        </Link>
+                    ) : (
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDownload();
+                            }}
+                            className="h-8 w-8 p-0"
+                            title="Download"
+                        >
+                            <Download className="w-4 h-4" />
+                        </Button>
+                    )}
                     <Button
                         size="sm"
                         variant="ghost"
@@ -978,19 +1076,35 @@ function MediaCard({
             onContextMenu={onContextMenu}
         >
             {item.type === 'image' ? (
-                <img 
-                    src={item.url} 
-                    alt={item.altText || item.name} 
+                <img
+                    src={item.url}
+                    alt={item.altText || item.name}
                     className="w-full h-full object-cover pointer-events-none select-none"
                     draggable={false}
                     onContextMenu={(e) => e.preventDefault()}
                     onDragStart={(e) => e.preventDefault()}
                 />
-            ) : (
+            ) : item.type === 'video' ? (
                 <div className="w-full h-full bg-black/40 flex items-center justify-center">
                     <Video className="w-12 h-12 text-white/40" />
                 </div>
-            )}
+            ) : item.type === 'document' ? (
+                item.url ? (
+                    <img
+                        src={item.url}
+                        alt={item.name}
+                        className="w-full h-full object-cover pointer-events-none select-none"
+                        draggable={false}
+                    />
+                ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-violet-500/20 to-purple-500/20 flex flex-col items-center justify-center">
+                        <FileText className="w-12 h-12 text-violet-400 mb-2" />
+                        <span className={cn("px-2 py-0.5 rounded text-[10px] font-medium", getDocTypeBadge())}>
+                            {item.location}
+                        </span>
+                    </div>
+                )
+            ) : null}
 
             {/* Overlay */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1008,23 +1122,41 @@ function MediaCard({
                         )}>
                             {item.sourceType}
                         </span>
-                        <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                onDownload();
-                            }}
-                            onMouseDown={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                            }}
-                            className="h-7 px-2 text-xs bg-white/10 hover:bg-white/20 text-white"
-                        >
-                            <Download className="w-3 h-3 mr-1" />
-                            Download
-                        </Button>
+                        {item.type === 'document' && item.documentLink ? (
+                            <Link href={item.documentLink}>
+                                <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={(e) => e.stopPropagation()}
+                                    onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                    }}
+                                    className="h-7 px-2 text-xs bg-violet-500/20 hover:bg-violet-500/30 text-violet-200"
+                                >
+                                    <ExternalLink className="w-3 h-3 mr-1" />
+                                    Open
+                                </Button>
+                            </Link>
+                        ) : (
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    onDownload();
+                                }}
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                }}
+                                className="h-7 px-2 text-xs bg-white/10 hover:bg-white/20 text-white"
+                            >
+                                <Download className="w-3 h-3 mr-1" />
+                                Download
+                            </Button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -1040,9 +1172,11 @@ function MediaCard({
             <div className="absolute top-2 left-2">
                 {item.type === 'image' ? (
                     <FileImage className="w-4 h-4 text-white/80" />
-                ) : (
+                ) : item.type === 'video' ? (
                     <FileVideo className="w-4 h-4 text-white/80" />
-                )}
+                ) : item.type === 'document' ? (
+                    <FileText className="w-4 h-4 text-violet-400" />
+                ) : null}
             </div>
 
             {/* Context Menu */}
@@ -1055,17 +1189,33 @@ function MediaCard({
                     }}
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onDownload();
-                            onCloseContextMenu();
-                        }}
-                        className="w-full px-4 py-2 text-left text-sm text-white/70 hover:text-white hover:bg-white/10 flex items-center gap-2 transition-colors"
-                    >
-                        <Download className="w-4 h-4" />
-                        Download
-                    </button>
+                    {item.type === 'document' && item.documentLink && (
+                        <Link href={item.documentLink}>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onCloseContextMenu();
+                                }}
+                                className="w-full px-4 py-2 text-left text-sm text-violet-400 hover:text-violet-300 hover:bg-violet-500/10 flex items-center gap-2 transition-colors"
+                            >
+                                <ExternalLink className="w-4 h-4" />
+                                Open Document
+                            </button>
+                        </Link>
+                    )}
+                    {item.type !== 'document' && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDownload();
+                                onCloseContextMenu();
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-white/70 hover:text-white hover:bg-white/10 flex items-center gap-2 transition-colors"
+                        >
+                            <Download className="w-4 h-4" />
+                            Download
+                        </button>
+                    )}
                     <button
                         onClick={(e) => {
                             e.stopPropagation();

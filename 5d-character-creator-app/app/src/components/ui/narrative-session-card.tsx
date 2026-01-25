@@ -53,13 +53,16 @@ export function NarrativeSessionCard({
         : null;
 
     // Color coding based on session mode
-    const accentColors = {
+    const accentColors: Record<string, string> = {
         character: 'border-l-violet-500',
         world: 'border-l-blue-500',
         chat: 'border-l-emerald-500',
         project: 'border-l-amber-500',
         lore: 'border-l-rose-500',
         scene: 'border-l-cyan-500',
+        script: 'border-l-purple-500',
+        workshop: 'border-l-orange-500',
+        chat_with: 'border-l-emerald-500',
     };
 
     // Contextual timestamp
@@ -162,7 +165,11 @@ export function NarrativeSessionCard({
 
                         {/* Title */}
                         <h3
-                            onClick={() => onClick(session.id)}
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onClick(session.id);
+                            }}
                             className="font-semibold text-base text-white/90 line-clamp-1 hover:text-primary transition-colors cursor-pointer"
                         >
                             {session.title || 'Untitled Session'}
@@ -210,8 +217,13 @@ export function NarrativeSessionCard({
                     </span>
 
                     <button
-                        onClick={(e) => { e.stopPropagation(); onClick(session.id); }}
-                        className="flex items-center gap-1 text-primary font-medium opacity-0 group-hover:opacity-100 transition-all"
+                        onClick={(e) => { 
+                            e.preventDefault();
+                            e.stopPropagation(); 
+                            onClick(session.id); 
+                        }}
+                        className="flex items-center gap-1 text-primary font-medium opacity-0 group-hover:opacity-100 transition-all cursor-pointer z-10 relative"
+                        type="button"
                     >
                         {getContextualCTA()}
                         <ArrowRight className="w-3.5 h-3.5" />
@@ -248,8 +260,13 @@ export function NarrativeSessionCard({
                     {/* Quick Actions */}
                     <div className="flex flex-wrap gap-2">
                         <button
-                            onClick={(e) => { e.stopPropagation(); onClick(session.id); }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/20 text-primary text-xs font-medium hover:bg-primary/30 transition-colors"
+                            onClick={(e) => { 
+                                e.preventDefault();
+                                e.stopPropagation(); 
+                                onClick(session.id); 
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/20 text-primary text-xs font-medium hover:bg-primary/30 transition-colors cursor-pointer z-10 relative"
+                            type="button"
                         >
                             <Sparkles className="w-3.5 h-3.5" />
                             Continue from here

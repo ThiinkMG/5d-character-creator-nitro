@@ -12,7 +12,8 @@ import {
   Mic,
   Plus,
   History,
-  Settings
+  Settings,
+  MessageSquare
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,14 @@ export default function Home() {
   };
 
   const quickActions = [
+    {
+      label: 'Start New Chat',
+      icon: MessageSquare,
+      gradient: 'from-zinc-600/80 via-slate-500/60 to-gray-400/40',
+      pattern: 'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.15) 0%, transparent 50%)',
+      path: '/chat',
+      description: 'Freeform conversation'
+    },
     {
       label: 'Create a Character',
       icon: Users,
@@ -77,7 +86,7 @@ export default function Home() {
         </div>
 
         {/* Quick Action Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 w-full max-w-4xl mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 w-full max-w-5xl mb-8">
           {quickActions.map((action) => (
             <button
               key={action.label}

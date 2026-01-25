@@ -1809,6 +1809,7 @@ export default function WorldProfilePage({ params: paramsPromise }: { params: Pr
                                     <MarkdownProse
                                         content={typeof world.description === 'string' ? world.description : (world.description ? String(world.description) : "A world waiting to be discovered. Click Edit to begin your world's journey.")}
                                         className="prose-lg md:prose-xl text-white/90 font-serif leading-loose tracking-wide"
+                                        hideMentionSymbol={true}
                                     />
                                 </div>
                             )}
@@ -2050,8 +2051,8 @@ export default function WorldProfilePage({ params: paramsPromise }: { params: Pr
                                                 if (section.type === 'gallery') {
                                                     const displayType = section.galleryDisplayType || 'grid';
                                                     const allMedia = [
-                                                        ...(section.galleryImages?.map((url, idx) => ({ type: 'image' as const, url, idx })) || []),
-                                                        ...(section.galleryVideos?.map((url, idx) => ({ type: 'video' as const, url, idx: idx + (section.galleryImages?.length || 0) })) || [])
+                                                        ...(section.galleryImages?.map((url: string, idx: number) => ({ type: 'image' as const, url, idx })) || []),
+                                                        ...(section.galleryVideos?.map((url: string, idx: number) => ({ type: 'video' as const, url, idx: idx + (section.galleryImages?.length || 0) })) || [])
                                                     ];
 
                                                     const renderGallery = () => {
@@ -2118,7 +2119,7 @@ export default function WorldProfilePage({ params: paramsPromise }: { params: Pr
                                                     return (
                                                         <section key={section.id} id={section.id} className="scroll-mt-24">
                                                             <h2 className="text-2xl font-bold text-white mb-4">{section.title}</h2>
-                                                            <MarkdownProse content={section.content || ''} className="prose prose-invert max-w-none" />
+                                                            <MarkdownProse content={section.content || ''} className="prose prose-invert max-w-none" hideMentionSymbol={true} />
                                                             {section.attachedImage && (
                                                                 <div className="mt-6 rounded-lg overflow-hidden border border-white/10">
                                                                     <img 
@@ -2285,10 +2286,33 @@ export default function WorldProfilePage({ params: paramsPromise }: { params: Pr
                 onGenerate={async (prompt, provider) => {
                     setPendingHeaderImageAction('generate');
                     try {
-                        await handleGenerateImage(prompt, provider);
+                        // Get API keys from localStorage
+                        const savedConfig = typeof window !== 'undefined'
+                            ? JSON.parse(localStorage.getItem('5d-api-config') || '{}')
+                            : {};
+
+                        const response = await fetch('/api/generate-image', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                ...(savedConfig.geminiKey && { 'x-gemini-key': savedConfig.geminiKey }),
+                                ...(savedConfig.openaiKey && { 'x-openai-key': savedConfig.openaiKey }),
+                                ...(savedConfig.dalleKey && { 'x-openai-key': savedConfig.dalleKey }),
+                            },
+                            body: JSON.stringify({ prompt, provider })
+                        });
+
+                        const data = await response.json();
+
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Image generation failed');
+                        }
+
                         setGeneratorModalOpen(false);
+                        return data.imageUrl;
                     } catch (error) {
                         setPendingHeaderImageAction(null);
+                        throw error;
                     }
                 }}
                 onUpload={(dataUrl) => {
@@ -2331,8 +2355,10 @@ export default function WorldProfilePage({ params: paramsPromise }: { params: Pr
                         setPendingImageUrl(data.imageUrl);
                         setInfoboxImageModalOpen(false);
                         setChangeHeroDialogOpen(true);
+                        return data.imageUrl;
                     } catch (error) {
                         console.error('Failed to generate image:', error);
+                        throw error;
                     }
                 }}
                 onUpload={(dataUrl) => {

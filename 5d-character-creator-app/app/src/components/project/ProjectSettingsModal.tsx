@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Settings, Plus, Minus, Check, Tag, ChevronDown } from 'lucide-react';
+import { X, Settings, Plus, Minus, Check, Tag, ChevronDown, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Project } from '@/types/project';
+import { ProjectAIGenerateModal } from './ProjectAIGenerateModal';
 
 // Pre-populated tag options
 const PRESET_TAGS = [
@@ -34,6 +35,7 @@ export function ProjectSettingsModal({ isOpen, onClose, project, onSave }: Proje
     const [showPresetDropdown, setShowPresetDropdown] = useState(false);
     const [showMoreGenres, setShowMoreGenres] = useState(false);
     const [isCustomGenre, setIsCustomGenre] = useState(false);
+    const [showAIGenerateModal, setShowAIGenerateModal] = useState(false);
 
     const MAX_TAGS = 3;
 
@@ -106,9 +108,20 @@ export function ProjectSettingsModal({ isOpen, onClose, project, onSave }: Proje
                 <div className="p-6 space-y-6">
                     {/* Description */}
                     <div>
-                        <label className="block text-sm font-medium text-muted-foreground mb-2">
-                            Description
-                        </label>
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="block text-sm font-medium text-muted-foreground">
+                                Description
+                            </label>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setShowAIGenerateModal(true)}
+                                className="h-7 text-xs text-violet-400 hover:text-violet-300 hover:bg-violet-500/10"
+                            >
+                                <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                                Generate with AI
+                            </Button>
+                        </div>
                         <textarea
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
@@ -278,6 +291,33 @@ export function ProjectSettingsModal({ isOpen, onClose, project, onSave }: Proje
                     </Button>
                 </div>
             </div>
+
+            {/* AI Generate Modal */}
+            <ProjectAIGenerateModal
+                isOpen={showAIGenerateModal}
+                onClose={() => setShowAIGenerateModal(false)}
+                project={project}
+                onApply={(updates) => {
+                    if (updates.description) {
+                        setDescription(updates.description);
+                    }
+                    if (updates.genre) {
+                        setGenre(updates.genre);
+                        setIsCustomGenre(true);
+                    }
+                    if (updates.tags && updates.tags.length > 0) {
+                        // Add new tags, respecting max limit
+                        const newTags = [...selectedTags];
+                        updates.tags.forEach((tag: string) => {
+                            if (newTags.length < MAX_TAGS && !newTags.includes(tag)) {
+                                newTags.push(tag);
+                            }
+                        });
+                        setSelectedTags(newTags);
+                    }
+                    setShowAIGenerateModal(false);
+                }}
+            />
         </div>
     );
 }

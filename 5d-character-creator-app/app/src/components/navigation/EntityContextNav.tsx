@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from '@/components/ui/button';
 import { LinkProjectModal } from '@/components/project/LinkProjectModal';
+import { LinkWorldModal } from '@/components/project/LinkWorldModal';
 
 interface EntityContextNavProps {
     entityId: string;
@@ -39,11 +40,15 @@ export function EntityContextNav({ entityId, type }: EntityContextNavProps) {
         worlds,
         getProjectForCharacter,
         getProjectForWorld,
+        getWorldForCharacter,
         addCharacterToProject,
-        addWorldToProject
+        addWorldToProject,
+        linkCharacterToWorld,
+        unlinkCharacterFromWorld
     } = useStore();
 
     const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+    const [isWorldLinkModalOpen, setIsWorldLinkModalOpen] = useState(false);
     const [isVisible, setIsVisible] = useState(true);
 
     // Initial check for visibility preference
@@ -66,6 +71,12 @@ export function EntityContextNav({ entityId, type }: EntityContextNavProps) {
         return undefined;
     }, [entityId, type, projects, characters, worlds]);
 
+    // Character's linked world (separate from project)
+    const characterWorld = React.useMemo(() => {
+        if (type === 'character') return getWorldForCharacter(entityId);
+        return undefined;
+    }, [entityId, type, worlds, characters]);
+
     // Linked Items (only useful if we have a project context)
     const linkedCharacters = React.useMemo(() => {
         if (!currentProject) return [];
@@ -82,6 +93,16 @@ export function EntityContextNav({ entityId, type }: EntityContextNavProps) {
             addCharacterToProject(entityId, projectId);
         } else if (type === 'world') {
             addWorldToProject(entityId, projectId);
+        }
+    };
+
+    const handleLinkWorld = (worldId: string) => {
+        if (type === 'character') {
+            if (worldId) {
+                linkCharacterToWorld(entityId, worldId);
+            } else {
+                unlinkCharacterFromWorld(entityId);
+            }
         }
     };
 
@@ -181,6 +202,51 @@ export function EntityContextNav({ entityId, type }: EntityContextNavProps) {
                     ) : null}
 
 
+                    {/* WORLD NODE (for characters) */}
+                    {type === 'character' && (
+                        characterWorld ? (
+                            <div className="flex items-center">
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <button
+                                            className="flex items-center gap-2 px-3 py-1.5 rounded-full transition-all text-xs font-medium border hover:bg-white/5 text-blue-300 border-blue-500/30 bg-blue-500/10"
+                                        >
+                                            <Globe className="w-3.5 h-3.5" />
+                                            <span className="max-w-[100px] truncate">{characterWorld.name}</span>
+                                            <ChevronDown className="w-3 h-3 opacity-50" />
+                                        </button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent className="w-56 bg-[#0A0A0F]/95 border-white/10 text-white backdrop-blur-xl">
+                                        <DropdownMenuLabel className="text-xs text-muted-foreground uppercase tracking-wider">Character's World</DropdownMenuLabel>
+                                        <DropdownMenuItem onClick={() => navigateTo(`/worlds/${characterWorld.id}`)}>
+                                            <ArrowRight className="w-3.5 h-3.5 mr-2" />
+                                            Go to World
+                                        </DropdownMenuItem>
+                                        <DropdownMenuSeparator className="bg-white/10" />
+                                        <DropdownMenuItem onClick={() => setIsWorldLinkModalOpen(true)}>
+                                            <LinkIcon className="w-3.5 h-3.5 mr-2" />
+                                            Change World
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                                <div className="h-4 w-[1px] bg-white/10 mx-1" />
+                            </div>
+                        ) : (
+                            <div className="flex items-center">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setIsWorldLinkModalOpen(true)}
+                                    className="h-7 px-3 text-xs text-muted-foreground hover:text-blue-400 gap-1.5"
+                                >
+                                    <Globe className="w-3.5 h-3.5" />
+                                    Link World
+                                </Button>
+                                <div className="h-4 w-[1px] bg-white/10 mx-1" />
+                            </div>
+                        )
+                    )}
+
                     {/* LINKED CHARACTERS NODE */}
                     {currentProject && (
                         <DropdownMenu>
@@ -268,6 +334,16 @@ export function EntityContextNav({ entityId, type }: EntityContextNavProps) {
                 projects={projects}
                 currentProjectId={currentProject?.id}
                 onCreateProject={() => navigateTo('/projects')}
+            />
+
+            {/* Link World Modal (for characters) */}
+            <LinkWorldModal
+                isOpen={isWorldLinkModalOpen}
+                onClose={() => setIsWorldLinkModalOpen(false)}
+                onLink={handleLinkWorld}
+                worlds={worlds}
+                currentWorldId={characterWorld?.id}
+                onCreateWorld={() => navigateTo('/chat?mode=world')}
             />
         </>
     );

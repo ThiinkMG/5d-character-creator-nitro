@@ -112,15 +112,29 @@ export function ChoiceModal({
 // Inline choice chips (for within messages)
 interface ChoiceChipsProps {
     choices: Choice[];
-    onSelect: (choice: Choice | Choice[]) => void;
+    onSelect: (choice: Choice | Choice[], context?: ChoiceContext) => void;
     allowMultiple?: boolean;
     allowCustom?: boolean;
+    messageContext?: ChoiceContext; // Context about the message these choices belong to
 }
 
-export function ChoiceChips({ choices, onSelect, allowMultiple = true, allowCustom = true }: ChoiceChipsProps) {
+// Context passed when a choice is selected
+export interface ChoiceContext {
+    messageId?: string;
+    questionText?: string; // The AI's question/prompt
+    allOptions?: string[]; // All available options for reference
+}
+
+export function ChoiceChips({ choices, onSelect, allowMultiple = true, allowCustom = true, messageContext }: ChoiceChipsProps) {
     const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
     const [isCustomMode, setIsCustomMode] = React.useState(false);
     const [customValue, setCustomValue] = React.useState('');
+
+    // Build context with all available options for AI reference
+    const buildContext = (): ChoiceContext => ({
+        ...messageContext,
+        allOptions: choices.map(c => c.label)
+    });
 
     const toggleSelection = (id: string) => {
         if (allowMultiple) {
@@ -131,7 +145,7 @@ export function ChoiceChips({ choices, onSelect, allowMultiple = true, allowCust
             // Single select behavior (immediate submit unless we want confirmation?)
             // For consistency with current app, single select usually submits immediately.
             const choice = choices.find(c => c.id === id);
-            if (choice) onSelect(choice);
+            if (choice) onSelect(choice, buildContext());
         }
     };
 
@@ -141,7 +155,7 @@ export function ChoiceChips({ choices, onSelect, allowMultiple = true, allowCust
             selectedChoices.push({ id: 'custom', label: customValue.trim() });
         }
         if (selectedChoices.length > 0) {
-            onSelect(selectedChoices);
+            onSelect(selectedChoices, buildContext());
         }
     };
 
@@ -227,8 +241,8 @@ export function ChoiceChips({ choices, onSelect, allowMultiple = true, allowCust
                                                     // And "enter" submits info.
                                                     handleSubmit();
                                                 } else {
-                                                    // Single select submit
-                                                    onSelect({ id: 'custom', label: customValue.trim() });
+                                                    // Single select submit with context
+                                                    onSelect({ id: 'custom', label: customValue.trim() }, buildContext());
                                                 }
                                             }
                                         }

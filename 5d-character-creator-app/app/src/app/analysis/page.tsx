@@ -2,28 +2,45 @@
 
 import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { BarChart3, PieChart, Info, Download, X, ArrowRight, User, Globe, Folder, Search, ArrowUp, ArrowDown, MessageSquare } from 'lucide-react';
+import { BarChart3, PieChart, Info, Download, X, ArrowRight, User, Globe, Folder, Search, ArrowUp, ArrowDown, MessageSquare, Network, Sparkles, FileText } from 'lucide-react';
+import { RelationshipGraph } from '@/components/visualization';
+import { AutoLinkSuggestions } from '@/components/project/AutoLinkSuggestions';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState, useMemo } from 'react';
 
 export default function AnalysisPage() {
-    const { characters, worlds, projects, chatSessions } = useStore();
+    const { characters, worlds, projects, chatSessions, characterDocuments, projectDocuments } = useStore();
+    const router = useRouter();
 
     // Modal State
     const [selectedFilter, setSelectedFilter] = useState<{
         type: 'Archetype' | 'Role' | 'Genre' | 'Category';
         value: string;
-        items: Array<{ id: string; name: string; url: string; type: 'Character' | 'World' | 'Project' | 'Chat'; progress?: number }>;
+        items: Array<{ id: string; name: string; url: string; type: 'Character' | 'World' | 'Project' | 'Chat' | 'Document'; progress?: number }>;
     } | null>(null);
 
     const [searchQuery, setSearchQuery] = useState('');
     const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'progress', direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
+    
+    // Document Navigation Modal State
+    const [documentNavModal, setDocumentNavModal] = useState<{
+        documentId: string;
+        documentName: string;
+        locations: Array<{ url: string; label: string; type: 'character' | 'project' }>;
+    } | null>(null);
 
     const totalProgress = Math.round(
         [...characters, ...worlds, ...projects].reduce((acc, item) => acc + item.progress, 0) /
         (characters.length + worlds.length + projects.length || 1)
     );
+
+    // Document statistics
+    const allDocuments = [...characterDocuments, ...projectDocuments];
+    const totalDocuments = allDocuments.length;
+    const uploadedDocuments = allDocuments.filter(doc => doc.sourceFile).length;
+    const generatedDocuments = totalDocuments - uploadedDocuments;
 
     // Distribution Data Helper
     const getDistribution = (items: any[], key: string) => {
@@ -55,7 +72,7 @@ export default function AnalysisPage() {
     };
 
     const handleSelect = (type: 'Archetype' | 'Role' | 'Genre' | 'Category', value: string) => {
-        let matches: Array<{ id: string; name: string; url: string; type: 'Character' | 'World' | 'Project' | 'Chat'; progress?: number }> = [];
+        let matches: Array<{ id: string; name: string; url: string; type: 'Character' | 'World' | 'Project' | 'Chat' | 'Document'; progress?: number }> = [];
 
         if (type === 'Archetype') {
             matches = characters
@@ -90,6 +107,23 @@ export default function AnalysisPage() {
                     type: 'Chat',
                     progress: undefined
                 }));
+            } else if (value === 'Documents') {
+                matches = [
+                    ...characterDocuments.map(doc => ({
+                        id: doc.id,
+                        name: doc.title,
+                        url: `/characters/${encodeURIComponent(doc.characterId)}?tab=documents&doc=${doc.id}`,
+                        type: 'Document' as const,
+                        progress: undefined
+                    })),
+                    ...projectDocuments.map(doc => ({
+                        id: doc.id,
+                        name: doc.title,
+                        url: `/projects/${encodeURIComponent(doc.projectId)}?tab=documents&doc=${doc.id}`,
+                        type: 'Document' as const,
+                        progress: undefined
+                    }))
+                ];
             }
         }
 
@@ -128,6 +162,86 @@ export default function AnalysisPage() {
             key,
             direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
         }));
+    };
+
+    // Find all locations where a document appears
+    const findDocumentLocations = (documentId: string): Array<{ url: string; label: string; type: 'character' | 'project' }> => {
+        const locations: Array<{ url: string; label: string; type: 'character' | 'project' }> = [];
+
+        // Check if it's a character document
+        const charDoc = characterDocuments.find(d => d.id === documentId);
+        if (charDoc) {
+            const character = characters.find(c => c.id === charDoc.characterId);
+            if (character) {
+                locations.push({
+                    url: `/characters/${encodeURIComponent(charDoc.characterId)}?tab=documents&doc=${documentId}`,
+                    label: `Character: ${character.name}`,
+                    type: 'character'
+                });
+
+                // Check if character is linked to a project and document was imported
+                if (character.projectId) {
+                    const project = projects.find(p => p.id === character.projectId);
+                    const importedDoc = projectDocuments.find(
+                        d => d.projectId === character.projectId && 
+                        d.metadata?.sourceItemId === documentId
+                    );
+                    if (importedDoc && project) {
+                        locations.push({
+                            url: `/projects/${encodeURIComponent(character.projectId)}?tab=documents&doc=${importedDoc.id}`,
+                            label: `Project: ${project.name} (Imported)`,
+                            type: 'project'
+                        });
+                    }
+                }
+            }
+        }
+
+        // Check if it's a project document
+        const projDoc = projectDocuments.find(d => d.id === documentId);
+        if (projDoc) {
+            const project = projects.find(p => p.id === projDoc.projectId);
+            if (project) {
+                locations.push({
+                    url: `/projects/${encodeURIComponent(projDoc.projectId)}?tab=documents&doc=${documentId}`,
+                    label: `Project: ${project.name}`,
+                    type: 'project'
+                });
+
+                // Check if it's an imported document and find the original source
+                if (projDoc.type === 'imported' && projDoc.metadata?.sourceItemId) {
+                    const sourceDoc = characterDocuments.find(d => d.id === projDoc.metadata?.sourceItemId);
+                    if (sourceDoc) {
+                        const character = characters.find(c => c.id === sourceDoc.characterId);
+                        if (character) {
+                            locations.push({
+                                url: `/characters/${encodeURIComponent(sourceDoc.characterId)}?tab=documents&doc=${projDoc.metadata.sourceItemId}`,
+                                label: `Character: ${character.name} (Original)`,
+                                type: 'character'
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        return locations;
+    };
+
+    const handleDocumentClick = (e: React.MouseEvent, documentId: string, documentName: string) => {
+        e.preventDefault();
+        const locations = findDocumentLocations(documentId);
+        
+        if (locations.length === 0) {
+            // No locations found, shouldn't happen but handle gracefully
+            return;
+        } else if (locations.length === 1) {
+            // Single location, navigate directly
+            router.push(locations[0].url);
+        } else {
+            // Multiple locations, show navigation modal
+            setDocumentNavModal({ documentId, documentName, locations });
+        }
     };
 
     return (
@@ -223,6 +337,34 @@ export default function AnalysisPage() {
                         <h3 className="text-4xl font-bold text-emerald-400">{totalProgress}%</h3>
                     </div>
                 </div>
+
+                {/* Documents */}
+                <div
+                    onClick={() => handleSelect('Category', 'Documents')}
+                    className="glass-card p-6 rounded-2xl relative overflow-hidden group cursor-pointer hover:border-blue-500/50 transition-all shine"
+                >
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <FileText className="h-16 w-16 text-blue-500" />
+                    </div>
+                    <div className="relative z-10">
+                        <p className="text-muted-foreground text-sm font-medium uppercase tracking-wide mb-1">Current Documents</p>
+                        <h3 className="text-4xl font-bold text-foreground mb-3">{totalDocuments}</h3>
+                        <div className="space-y-2 pt-3 border-t border-white/5">
+                            <div className="flex items-center justify-between text-sm">
+                                <span className="text-muted-foreground">Total</span>
+                                <span className="text-foreground font-semibold">{totalDocuments}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                                <span className="text-muted-foreground">Uploaded</span>
+                                <span className="text-blue-400 font-semibold">{uploadedDocuments}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                                <span className="text-muted-foreground">Generated</span>
+                                <span className="text-cyan-400 font-semibold">{generatedDocuments}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {/* Charts Grid */}
@@ -292,6 +434,33 @@ export default function AnalysisPage() {
                 </div>
             </div>
 
+            {/* Relationship Graph & Auto-Link Suggestions */}
+            <div className="mt-12 grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Relationship Graph - Takes 2 columns */}
+                <div className="lg:col-span-2 glass-card p-8 rounded-2xl">
+                    <h3 className="text-lg font-medium mb-6 flex items-center gap-2">
+                        <Network className="h-5 w-5 text-violet-400" />
+                        Entity Relationships
+                        <span className="text-xs text-muted-foreground font-normal ml-2">
+                            Click nodes to navigate • Drag to pan • Scroll to zoom
+                        </span>
+                    </h3>
+                    <RelationshipGraph height={400} className="w-full" />
+                </div>
+
+                {/* Auto-Link Suggestions - Takes 1 column */}
+                <div className="glass-card p-6 rounded-2xl">
+                    <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
+                        <Sparkles className="h-5 w-5 text-violet-400" />
+                        Smart Suggestions
+                    </h3>
+                    <p className="text-xs text-muted-foreground mb-4">
+                        AI-detected relationships between your unlinked entities
+                    </p>
+                    <AutoLinkSuggestions maxSuggestions={6} />
+                </div>
+            </div>
+
             {/* Details Modal / Overlay */}
             {selectedFilter && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setSelectedFilter(null)}>
@@ -353,40 +522,65 @@ export default function AnalysisPage() {
                         <div className="overflow-y-auto flex-1 p-2 custom-scrollbar">
                             {filteredItems.length > 0 ? (
                                 <div className="grid gap-2 p-2">
-                                    {filteredItems.map(item => (
-                                        <Link
-                                            key={item.id}
-                                            href={item.url}
-                                            className="flex items-center justify-between p-4 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 hover:border-white/10 transition-all group"
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className={cn(
-                                                    "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
-                                                    item.type === 'Character' ? "bg-primary/10 text-primary" :
-                                                        item.type === 'World' ? "bg-violet-500/10 text-violet-400" :
-                                                            "bg-cyan-500/10 text-cyan-400"
-                                                )}>
-                                                    {item.type === 'Character' ? <User className="h-5 w-5" /> :
-                                                        item.type === 'World' ? <Globe className="h-5 w-5" /> :
-                                                            <Folder className="h-5 w-5" />
-                                                    }
-                                                </div>
-                                                <div>
-                                                    <div className="font-medium text-foreground">{item.name}</div>
-                                                    <div className="text-xs text-muted-foreground flex items-center gap-2">
-                                                        <span>{item.type}</span>
-                                                        {item.progress !== undefined && (
-                                                            <span className={cn(
-                                                                "px-1.5 py-0.5 rounded text-[10px]",
-                                                                item.progress === 100 ? "bg-emerald-500/20 text-emerald-400" : "bg-white/10"
-                                                            )}>{item.progress}%</span>
-                                                        )}
+                                    {filteredItems.map(item => {
+                                        const isDocument = item.type === 'Document';
+                                        const itemContent = (
+                                            <>
+                                                <div className="flex items-center gap-3">
+                                                    <div className={cn(
+                                                        "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
+                                                        item.type === 'Character' ? "bg-primary/10 text-primary" :
+                                                            item.type === 'World' ? "bg-violet-500/10 text-violet-400" :
+                                                                item.type === 'Document' ? "bg-blue-500/10 text-blue-400" :
+                                                                    item.type === 'Chat' ? "bg-amber-500/10 text-amber-400" :
+                                                                        "bg-cyan-500/10 text-cyan-400"
+                                                    )}>
+                                                        {item.type === 'Character' ? <User className="h-5 w-5" /> :
+                                                            item.type === 'World' ? <Globe className="h-5 w-5" /> :
+                                                                item.type === 'Document' ? <FileText className="h-5 w-5" /> :
+                                                                    item.type === 'Chat' ? <MessageSquare className="h-5 w-5" /> :
+                                                                        <Folder className="h-5 w-5" />
+                                                        }
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-medium text-foreground">{item.name}</div>
+                                                        <div className="text-xs text-muted-foreground flex items-center gap-2">
+                                                            <span>{item.type}</span>
+                                                            {item.progress !== undefined && (
+                                                                <span className={cn(
+                                                                    "px-1.5 py-0.5 rounded text-[10px]",
+                                                                    item.progress === 100 ? "bg-emerald-500/20 text-emerald-400" : "bg-white/10"
+                                                                )}>{item.progress}%</span>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                            <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-white group-hover:translate-x-1 transition-all" />
-                                        </Link>
-                                    ))}
+                                                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-white group-hover:translate-x-1 transition-all" />
+                                            </>
+                                        );
+
+                                        if (isDocument) {
+                                            return (
+                                                <div
+                                                    key={item.id}
+                                                    onClick={(e) => handleDocumentClick(e, item.id, item.name)}
+                                                    className="flex items-center justify-between p-4 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 hover:border-white/10 transition-all group cursor-pointer"
+                                                >
+                                                    {itemContent}
+                                                </div>
+                                            );
+                                        }
+
+                                        return (
+                                            <Link
+                                                key={item.id}
+                                                href={item.url}
+                                                className="flex items-center justify-between p-4 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 hover:border-white/10 transition-all group"
+                                            >
+                                                {itemContent}
+                                            </Link>
+                                        );
+                                    })}
                                 </div>
                             ) : (
                                 <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
@@ -401,6 +595,63 @@ export default function AnalysisPage() {
                             <p className="text-[10px] text-muted-foreground uppercase tracking-widest">
                                 Showing {filteredItems.length} of {selectedFilter.items.length} Items
                             </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Document Navigation Modal */}
+            {documentNavModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setDocumentNavModal(null)}>
+                    <div
+                        className="bg-[#0A0A0F] border border-white/10 rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-200 shadow-2xl"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* Modal Header */}
+                        <div className="p-6 border-b border-white/5">
+                            <div className="flex items-center justify-between mb-2">
+                                <div>
+                                    <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                                        <FileText className="h-5 w-5 text-blue-400" />
+                                        Navigate to Document
+                                    </h3>
+                                    <p className="text-sm text-muted-foreground mt-1">{documentNavModal.documentName}</p>
+                                </div>
+                                <button onClick={() => setDocumentNavModal(null)} className="text-muted-foreground hover:text-white p-2 rounded-full hover:bg-white/5 transition-colors">
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-2">
+                                This document appears in multiple locations. Choose where to navigate:
+                            </p>
+                        </div>
+
+                        {/* Locations List */}
+                        <div className="overflow-y-auto flex-1 p-4 custom-scrollbar">
+                            <div className="space-y-2">
+                                {documentNavModal.locations.map((location, index) => (
+                                    <Link
+                                        key={index}
+                                        href={location.url}
+                                        onClick={() => setDocumentNavModal(null)}
+                                        className="flex items-center justify-between p-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-primary/30 transition-all group"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className={cn(
+                                                "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
+                                                location.type === 'character' ? "bg-primary/10 text-primary" : "bg-cyan-500/10 text-cyan-400"
+                                            )}>
+                                                {location.type === 'character' ? <User className="h-5 w-5" /> : <Folder className="h-5 w-5" />}
+                                            </div>
+                                            <div>
+                                                <div className="font-medium text-foreground">{location.label}</div>
+                                                <div className="text-xs text-muted-foreground">{location.type === 'character' ? 'Character Document' : 'Project Document'}</div>
+                                            </div>
+                                        </div>
+                                        <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-white group-hover:translate-x-1 transition-all" />
+                                    </Link>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { User, Globe, Folder, MessageSquare, Sparkles, Search, BookOpen, Film } from 'lucide-react';
+import { User, Globe, Folder } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -12,19 +12,10 @@ import {
     DropdownMenuLabel
 } from "@/components/ui/dropdown-menu";
 import { cn } from '@/lib/utils';
-import Link from 'next/link';
+import { getModesForSwitcher, getModeConfig, type ChatMode, type ModeConfig } from '@/lib/mode-registry';
 
-export type ChatMode = 'chat' | 'character' | 'world' | 'project' | 'lore' | 'scene' | 'workshop' | 'chat_with';
-
-export interface ModeOption {
-    id: ChatMode;
-    label: string;
-    description: string;
-    icon: React.ComponentType<{ className?: string }>;
-    color: string;
-    createNew?: boolean;
-    targetId?: string;
-}
+// Re-export ChatMode for backward compatibility
+export type { ChatMode } from '@/lib/mode-registry';
 
 interface ModeSwitcherProps {
     currentMode: ChatMode | null;
@@ -34,53 +25,8 @@ interface ModeSwitcherProps {
     projects?: Array<{ id: string; name: string }>;
 }
 
-const MODE_OPTIONS: ModeOption[] = [
-    {
-        id: 'character',
-        label: 'Character Creator',
-        description: 'Create or edit characters',
-        icon: User,
-        color: 'text-emerald-400',
-        createNew: true
-    },
-    {
-        id: 'world',
-        label: 'World Builder',
-        description: 'Create or edit worlds',
-        icon: Globe,
-        color: 'text-blue-400',
-        createNew: true
-    },
-    {
-        id: 'project',
-        label: 'Project Manager',
-        description: 'Create or edit projects',
-        icon: Folder,
-        color: 'text-orange-400',
-        createNew: true
-    },
-    {
-        id: 'lore',
-        label: 'Lore Explorer',
-        description: 'Explore and expand lore',
-        icon: BookOpen,
-        color: 'text-purple-400'
-    },
-    {
-        id: 'scene',
-        label: 'Scene Writer',
-        description: 'Write scenes with characters',
-        icon: Film,
-        color: 'text-pink-400'
-    },
-    {
-        id: 'chat',
-        label: 'General Chat',
-        description: 'Freeform conversation',
-        icon: MessageSquare,
-        color: 'text-gray-400'
-    }
-];
+// Get mode options from the centralized registry
+const MODE_OPTIONS = getModesForSwitcher();
 
 export function ModeSwitcher({
     currentMode,

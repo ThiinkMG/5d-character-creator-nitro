@@ -591,14 +591,14 @@ export function ImageCropper({ imageUrl, aspectRatio: initialAspectRatio = '1:1'
                             className="absolute inset-0 pointer-events-none"
                             style={{
                                 background: `
-                                    linear-gradient(to right, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.5) ${(cropPosition.x / containerRef.current?.offsetWidth || 0) * 100}%,
-                                    transparent ${(cropPosition.x / containerRef.current?.offsetWidth || 0) * 100}%,
-                                    transparent ${((cropPosition.x + cropSize.width) / containerRef.current?.offsetWidth || 0) * 100}%,
-                                    rgba(0,0,0,0.5) ${((cropPosition.x + cropSize.width) / containerRef.current?.offsetWidth || 0) * 100}%, rgba(0,0,0,0.5) 100%),
-                                    linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.5) ${(cropPosition.y / containerRef.current?.offsetHeight || 0) * 100}%,
-                                    transparent ${(cropPosition.y / containerRef.current?.offsetHeight || 0) * 100}%,
-                                    transparent ${((cropPosition.y + cropSize.height) / containerRef.current?.offsetHeight || 0) * 100}%,
-                                    rgba(0,0,0,0.5) ${((cropPosition.y + cropSize.height) / containerRef.current?.offsetHeight || 0) * 100}%, rgba(0,0,0,0.5) 100%)
+                                    linear-gradient(to right, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.5) ${(cropPosition.x / (containerRef.current?.offsetWidth || 1)) * 100}%,
+                                    transparent ${(cropPosition.x / (containerRef.current?.offsetWidth || 1)) * 100}%,
+                                    transparent ${((cropPosition.x + cropSize.width) / (containerRef.current?.offsetWidth || 1)) * 100}%,
+                                    rgba(0,0,0,0.5) ${((cropPosition.x + cropSize.width) / (containerRef.current?.offsetWidth || 1)) * 100}%, rgba(0,0,0,0.5) 100%),
+                                    linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.5) ${(cropPosition.y / (containerRef.current?.offsetHeight || 1)) * 100}%,
+                                    transparent ${(cropPosition.y / (containerRef.current?.offsetHeight || 1)) * 100}%,
+                                    transparent ${((cropPosition.y + cropSize.height) / (containerRef.current?.offsetHeight || 1)) * 100}%,
+                                    rgba(0,0,0,0.5) ${((cropPosition.y + cropSize.height) / (containerRef.current?.offsetHeight || 1)) * 100}%, rgba(0,0,0,0.5) 100%)
                                 `
                             }}
                         />

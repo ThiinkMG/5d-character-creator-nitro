@@ -11,9 +11,10 @@ interface StoryEventModalProps {
     onClose: () => void;
     onSave: (event: Omit<TimelineEvent, 'id' | 'order'>) => void;
     projectContext: string; // Summary or Name to help AI
+    editingEvent?: TimelineEvent | null; // For editing existing events
 }
 
-export function StoryEventModal({ isOpen, onClose, onSave, projectContext }: StoryEventModalProps) {
+export function StoryEventModal({ isOpen, onClose, onSave, projectContext, editingEvent }: StoryEventModalProps) {
     const [mode, setMode] = useState<'manual' | 'ai'>('manual');
     const [title, setTitle] = useState('');
     const [chapter, setChapter] = useState('');
@@ -25,18 +26,27 @@ export function StoryEventModal({ isOpen, onClose, onSave, projectContext }: Sto
     const [generatedOptions, setGeneratedOptions] = useState<any[]>([]);
     const [error, setError] = useState<string | null>(null);
 
-    // Reset
+    // Initialize/Reset based on editing state
     React.useEffect(() => {
         if (isOpen) {
-            setMode('manual');
-            setTitle('');
-            setChapter('');
-            setDescription('');
+            if (editingEvent) {
+                // Pre-fill fields when editing
+                setMode('manual');
+                setTitle(editingEvent.title || '');
+                setChapter(editingEvent.chapter || '');
+                setDescription(editingEvent.description || '');
+            } else {
+                // Reset for new event
+                setMode('manual');
+                setTitle('');
+                setChapter('');
+                setDescription('');
+            }
             setAiContext('');
             setGeneratedOptions([]);
             setError(null);
         }
-    }, [isOpen]);
+    }, [isOpen, editingEvent]);
 
     const handleSave = () => {
         if (!title.trim() || !description.trim()) return;
@@ -152,7 +162,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown formatting.
                     <div>
                         <h2 className="text-xl font-semibold text-white tracking-tight flex items-center gap-2">
                             <Calendar className="w-5 h-5 text-cyan-400" />
-                            Add Story Event
+                            {editingEvent ? 'Edit Story Event' : 'Add Story Event'}
                         </h2>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
@@ -302,7 +312,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown formatting.
                             disabled={!title.trim() || !description.trim()}
                             className="bg-cyan-600 hover:bg-cyan-500 text-white h-9"
                         >
-                            Add Event
+                            {editingEvent ? 'Save Changes' : 'Add Event'}
                         </Button>
                     </div>
                 )}

@@ -42,7 +42,7 @@ export interface Character {
     infoboxImageUrl?: string; // Separate image for infobox sidebar (if not set, uses imageUrl)
     imageSource?: 'preset' | 'uploaded' | 'generated';
     imageCaption?: string;
-    headerImagePosition?: { x: number; y: number }; // Position offset for header image (for drag-to-reposition)
+    headerImagePosition?: { x: number; y: number }; // Focal point percentages (0-100) for header image, default 50/50 centered
 
     // NEW: Gallery display
     cardSize?: 'small' | 'medium' | 'large' | 'wide' | 'tall';

@@ -4,7 +4,16 @@ import { Character } from '@/types/character';
 import { World } from '@/types/world';
 import { Project } from '@/types/project';
 import { ChatSession } from '@/types/chat';
-import { CharacterDocument } from '@/types/document';
+import { CharacterDocument, ProjectDocument } from '@/types/document';
+import { ModePreset } from '@/types/mode-preset';
+import { ChatMode } from '@/lib/mode-registry';
+
+interface TrashItem {
+    id: string;
+    type: 'character' | 'world' | 'project' | 'character_document' | 'project_document' | 'chat_session';
+    data: any; // The full item data
+    deletedAt: Date;
+}
 
 interface GlobalState {
     characters: Character[];
@@ -12,6 +21,9 @@ interface GlobalState {
     projects: Project[];
     chatSessions: ChatSession[];
     characterDocuments: CharacterDocument[];
+    projectDocuments: ProjectDocument[];
+    modePresets: ModePreset[];
+    trash: TrashItem[];
 
     activeCharacterId: string | null;
     activeWorldId: string | null;
@@ -60,12 +72,39 @@ interface GlobalState {
     getProjectForCharacter: (characterId: string) => Project | undefined;
     getProjectForWorld: (worldId: string) => Project | undefined;
 
+    // Character-to-World Linking Actions
+    linkCharacterToWorld: (characterId: string, worldId: string) => void;
+    unlinkCharacterFromWorld: (characterId: string) => void;
+    getWorldForCharacter: (characterId: string) => World | undefined;
+    getCharactersForWorld: (worldId: string) => Character[];
+
     // Document Actions
     addCharacterDocument: (document: CharacterDocument) => void;
     updateCharacterDocument: (id: string, updates: Partial<CharacterDocument>) => void;
     deleteCharacterDocument: (id: string) => void;
     getCharacterDocuments: (characterId: string) => CharacterDocument[];
     getCharacterDocument: (id: string) => CharacterDocument | undefined;
+
+    // Project Document Actions
+    addProjectDocument: (document: ProjectDocument) => void;
+    updateProjectDocument: (id: string, updates: Partial<ProjectDocument>) => void;
+    deleteProjectDocument: (id: string) => void;
+    getProjectDocuments: (projectId: string) => ProjectDocument[];
+    getProjectDocument: (id: string) => ProjectDocument | undefined;
+
+    // Mode Preset Actions
+    addModePreset: (preset: ModePreset) => void;
+    updateModePreset: (id: string, updates: Partial<ModePreset>) => void;
+    deleteModePreset: (id: string) => void;
+    getModePreset: (id: string) => ModePreset | undefined;
+    getModePresets: (mode?: ChatMode) => ModePreset[];
+
+    // Trash Actions
+    addToTrash: (item: TrashItem) => void;
+    restoreFromTrash: (id: string) => void;
+    removeFromTrash: (id: string) => void;
+    emptyTrash: () => void;
+    cleanupOldTrash: () => void; // Remove items older than 30 days
 }
 
 export const useStore = create<GlobalState>()(
@@ -76,6 +115,9 @@ export const useStore = create<GlobalState>()(
             projects: [],
             chatSessions: [],
             characterDocuments: [],
+            projectDocuments: [],
+            modePresets: [],
+            trash: [],
 
             activeCharacterId: null,
             activeWorldId: null,
@@ -102,10 +144,24 @@ export const useStore = create<GlobalState>()(
                 })),
 
             deleteCharacter: (id) =>
-                set((state) => ({
-                    characters: state.characters.filter((char) => char.id !== id),
-                    activeCharacterId: state.activeCharacterId === id ? null : state.activeCharacterId,
-                })),
+                set((state) => {
+                    const character = state.characters.find((char) => char.id === id);
+                    if (character) {
+                        // Move to trash instead of hard delete
+                        const trashItem: TrashItem = {
+                            id: character.id,
+                            type: 'character',
+                            data: character,
+                            deletedAt: new Date()
+                        };
+                        return {
+                            characters: state.characters.filter((char) => char.id !== id),
+                            activeCharacterId: state.activeCharacterId === id ? null : state.activeCharacterId,
+                            trash: [...state.trash, trashItem]
+                        };
+                    }
+                    return state;
+                }),
 
             setActiveCharacter: (id) => set({ activeCharacterId: id }),
             getCharacter: (id) => get().characters.find((c) => c.id === id),
@@ -173,10 +229,24 @@ export const useStore = create<GlobalState>()(
                 })),
 
             deleteProject: (id) =>
-                set((state) => ({
-                    projects: state.projects.filter((p) => p.id !== id),
-                    activeProjectId: state.activeProjectId === id ? null : state.activeProjectId,
-                })),
+                set((state) => {
+                    const project = state.projects.find((p) => p.id === id);
+                    if (project) {
+                        // Move to trash instead of hard delete
+                        const trashItem: TrashItem = {
+                            id: project.id,
+                            type: 'project',
+                            data: project,
+                            deletedAt: new Date()
+                        };
+                        return {
+                            projects: state.projects.filter((p) => p.id !== id),
+                            activeProjectId: state.activeProjectId === id ? null : state.activeProjectId,
+                            trash: [...state.trash, trashItem]
+                        };
+                    }
+                    return state;
+                }),
 
             setActiveProject: (id) => set({ activeProjectId: id }),
             getProject: (id) => get().projects.find((p) => p.id === id),
@@ -365,6 +435,56 @@ export const useStore = create<GlobalState>()(
                 return get().projects.find(p => p.id === world.projectId);
             },
 
+            // Character-to-World Linking Implementation
+            linkCharacterToWorld: (characterId, worldId) =>
+                set((state) => ({
+                    characters: state.characters.map((c) =>
+                        c.id === characterId
+                            ? { ...c, worldId, updatedAt: new Date() }
+                            : c
+                    ),
+                    worlds: state.worlds.map((w) =>
+                        w.id === worldId
+                            ? {
+                                ...w,
+                                characterIds: [...new Set([...(w.characterIds || []), characterId])],
+                                updatedAt: new Date()
+                              }
+                            : w
+                    ),
+                })),
+
+            unlinkCharacterFromWorld: (characterId) =>
+                set((state) => {
+                    const char = state.characters.find(c => c.id === characterId);
+                    const worldId = char?.worldId;
+                    return {
+                        characters: state.characters.map((c) =>
+                            c.id === characterId
+                                ? { ...c, worldId: undefined, updatedAt: new Date() }
+                                : c
+                        ),
+                        worlds: worldId ? state.worlds.map((w) =>
+                            w.id === worldId
+                                ? {
+                                    ...w,
+                                    characterIds: (w.characterIds || []).filter(id => id !== characterId),
+                                    updatedAt: new Date()
+                                  }
+                                : w
+                        ) : state.worlds,
+                    };
+                }),
+
+            getWorldForCharacter: (characterId) => {
+                const char = get().characters.find(c => c.id === characterId);
+                if (!char?.worldId) return undefined;
+                return get().worlds.find(w => w.id === char.worldId);
+            },
+
+            getCharactersForWorld: (worldId) =>
+                get().characters.filter(c => c.worldId === worldId),
+
             // Document Implementation
             addCharacterDocument: (document) =>
                 set((state) => ({
@@ -381,14 +501,155 @@ export const useStore = create<GlobalState>()(
                 })),
 
             deleteCharacterDocument: (id) =>
-                set((state) => ({
-                    characterDocuments: state.characterDocuments.filter((doc) => doc.id !== id),
-                })),
+                set((state) => {
+                    const doc = state.characterDocuments.find((d) => d.id === id);
+                    if (doc) {
+                        // Move to trash instead of hard delete
+                        const trashItem: TrashItem = {
+                            id: doc.id,
+                            type: 'character_document',
+                            data: doc,
+                            deletedAt: new Date()
+                        };
+                        return {
+                            characterDocuments: state.characterDocuments.filter((doc) => doc.id !== id),
+                            trash: [...state.trash, trashItem]
+                        };
+                    }
+                    return state;
+                }),
 
             getCharacterDocuments: (characterId) =>
                 get().characterDocuments.filter((doc) => doc.characterId === characterId),
 
             getCharacterDocument: (id) => get().characterDocuments.find((doc) => doc.id === id),
+
+            // Project Document Implementation
+            addProjectDocument: (document) =>
+                set((state) => ({
+                    projectDocuments: [document, ...state.projectDocuments]
+                })),
+
+            updateProjectDocument: (id, updates) =>
+                set((state) => ({
+                    projectDocuments: state.projectDocuments.map((doc) =>
+                        doc.id === id
+                            ? { ...doc, ...updates, updatedAt: new Date() }
+                            : doc
+                    ),
+                })),
+
+            deleteProjectDocument: (id) =>
+                set((state) => {
+                    const doc = state.projectDocuments.find((d) => d.id === id);
+                    if (doc) {
+                        // Move to trash instead of hard delete
+                        const trashItem: TrashItem = {
+                            id: doc.id,
+                            type: 'project_document',
+                            data: doc,
+                            deletedAt: new Date()
+                        };
+                        return {
+                            projectDocuments: state.projectDocuments.filter((doc) => doc.id !== id),
+                            trash: [...state.trash, trashItem]
+                        };
+                    }
+                    return state;
+                }),
+
+            getProjectDocuments: (projectId) =>
+                get().projectDocuments.filter((doc) => doc.projectId === projectId),
+
+            getProjectDocument: (id) => get().projectDocuments.find((doc) => doc.id === id),
+
+            // Mode Preset Implementation
+            addModePreset: (preset) =>
+                set((state) => ({
+                    modePresets: [preset, ...state.modePresets]
+                })),
+
+            updateModePreset: (id, updates) =>
+                set((state) => ({
+                    modePresets: state.modePresets.map((preset) =>
+                        preset.id === id
+                            ? { ...preset, ...updates, updatedAt: new Date() }
+                            : preset
+                    ),
+                })),
+
+            deleteModePreset: (id) =>
+                set((state) => ({
+                    modePresets: state.modePresets.filter((preset) => preset.id !== id),
+                })),
+
+            getModePreset: (id) => get().modePresets.find((preset) => preset.id === id),
+
+            getModePresets: (mode) => {
+                const presets = get().modePresets;
+                if (!mode) return presets;
+                return presets.filter((preset) => preset.mode === mode);
+            },
+
+            // Trash Implementation
+            addToTrash: (item) =>
+                set((state) => ({
+                    trash: [...state.trash, item]
+                })),
+
+            restoreFromTrash: (id) =>
+                set((state) => {
+                    const trashItem = state.trash.find((item) => item.id === id);
+                    if (!trashItem) return state;
+
+                    const newState: any = {
+                        trash: state.trash.filter((item) => item.id !== id)
+                    };
+
+                    // Restore based on type
+                    switch (trashItem.type) {
+                        case 'character':
+                            newState.characters = [...state.characters, trashItem.data];
+                            break;
+                        case 'world':
+                            newState.worlds = [...state.worlds, trashItem.data];
+                            break;
+                        case 'project':
+                            newState.projects = [...state.projects, trashItem.data];
+                            break;
+                        case 'chat_session':
+                            newState.chatSessions = [...state.chatSessions, trashItem.data];
+                            break;
+                        case 'character_document':
+                            newState.characterDocuments = [...state.characterDocuments, trashItem.data];
+                            break;
+                        case 'project_document':
+                            newState.projectDocuments = [...state.projectDocuments, trashItem.data];
+                            break;
+                    }
+
+                    return newState;
+                }),
+
+            removeFromTrash: (id) =>
+                set((state) => ({
+                    trash: state.trash.filter((item) => item.id !== id)
+                })),
+
+            emptyTrash: () =>
+                set({ trash: [] }),
+
+            cleanupOldTrash: () =>
+                set((state) => {
+                    const thirtyDaysAgo = new Date();
+                    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                    return {
+                        trash: state.trash.filter((item) => {
+                            const deletedDate = new Date(item.deletedAt);
+                            return deletedDate >= thirtyDaysAgo;
+                        })
+                    };
+                }),
         }),
         {
             name: '5d-storage',
@@ -398,6 +659,9 @@ export const useStore = create<GlobalState>()(
                 projects: state.projects,
                 chatSessions: state.chatSessions,
                 characterDocuments: state.characterDocuments,
+                projectDocuments: state.projectDocuments,
+                modePresets: state.modePresets,
+                trash: state.trash,
                 isSidebarCollapsed: state.isSidebarCollapsed
             }),
         }
