@@ -57,10 +57,39 @@ export async function POST(req: Request) {
                     }
 
                     const geminiData = await geminiResponse.json();
-                    // Gemini returns inline data - for now we fall back to Pollinations
-                    // Full Gemini image implementation would need blob handling
-                    const fallbackPrompt = encodeURIComponent(`${prompt}${style ? `, ${style} style` : ''}`);
-                    imageUrl = `https://image.pollinations.ai/prompt/${fallbackPrompt}?width=1024&height=1024&nologo=true`;
+                    
+                    // Check if Gemini returned image data
+                    if (geminiData.candidates && geminiData.candidates[0]?.content?.parts && Array.isArray(geminiData.candidates[0].content.parts)) {
+                        const parts = geminiData.candidates[0].content.parts;
+                        // Look for inline image data
+                        const imagePart = parts.find((part: any) => part.inlineData);
+                        if (imagePart?.inlineData?.data) {
+                            // Convert base64 to data URL
+                            imageUrl = `data:${imagePart.inlineData.mimeType || 'image/png'};base64,${imagePart.inlineData.data}`;
+                        } else {
+                            // If no image in response, check for text that might contain image URL
+                            const textPart = parts.find((part: any) => part.text);
+                            if (textPart?.text) {
+                                // Try to extract image URL from text response
+                                const urlMatch = textPart.text.match(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp)/i);
+                                if (urlMatch) {
+                                    imageUrl = urlMatch[0];
+                                } else {
+                                    // Fallback to Pollinations if no image found
+                                    const fallbackPrompt = encodeURIComponent(`${prompt}${style ? `, ${style} style` : ''}`);
+                                    imageUrl = `https://image.pollinations.ai/prompt/${fallbackPrompt}?width=1024&height=1024&nologo=true`;
+                                }
+                            } else {
+                                // Fallback to Pollinations
+                                const fallbackPrompt = encodeURIComponent(`${prompt}${style ? `, ${style} style` : ''}`);
+                                imageUrl = `https://image.pollinations.ai/prompt/${fallbackPrompt}?width=1024&height=1024&nologo=true`;
+                            }
+                        }
+                    } else {
+                        // Fallback to Pollinations if response structure is unexpected
+                        const fallbackPrompt = encodeURIComponent(`${prompt}${style ? `, ${style} style` : ''}`);
+                        imageUrl = `https://image.pollinations.ai/prompt/${fallbackPrompt}?width=1024&height=1024&nologo=true`;
+                    }
                 } catch (e) {
                     console.error('Gemini generation error:', e);
                     // Fallback to Pollinations
@@ -111,6 +140,11 @@ export async function POST(req: Request) {
 
             default:
                 return NextResponse.json({ error: 'Invalid provider' }, { status: 400 });
+        }
+
+        // Safety check: ensure imageUrl is defined before returning
+        if (!imageUrl) {
+            return NextResponse.json({ error: 'Failed to generate image URL' }, { status: 500 });
         }
 
         return NextResponse.json({

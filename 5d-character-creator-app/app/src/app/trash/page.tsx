@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore, useCharacterStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,64 @@ export default function TrashPage() {
     const { worlds, updateWorld } = useStore();
     const { characters, updateCharacter } = useCharacterStore();
     const [activeTab, setActiveTab] = useState<'all' | 'characters' | 'worlds'>('all');
+
+    // Auto-delete items older than 30 days
+    useEffect(() => {
+        const cleanupOldTrash = () => {
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+            let hasChanges = false;
+
+            // Clean up character trashed sections
+            characters.forEach(char => {
+                if (char.trashedSections && char.trashedSections.length > 0) {
+                    const oldSections = char.trashedSections.filter(section => {
+                        const deletedDate = new Date(section.deletedAt);
+                        return deletedDate < thirtyDaysAgo;
+                    });
+
+                    if (oldSections.length > 0) {
+                        const remainingSections = char.trashedSections.filter(section => {
+                            const deletedDate = new Date(section.deletedAt);
+                            return deletedDate >= thirtyDaysAgo;
+                        });
+                        updateCharacter(char.id, { trashedSections: remainingSections });
+                        hasChanges = true;
+                    }
+                }
+            });
+
+            // Clean up world trashed sections
+            worlds.forEach(world => {
+                if (world.trashedSections && world.trashedSections.length > 0) {
+                    const oldSections = world.trashedSections.filter(section => {
+                        const deletedDate = new Date(section.deletedAt);
+                        return deletedDate < thirtyDaysAgo;
+                    });
+
+                    if (oldSections.length > 0) {
+                        const remainingSections = world.trashedSections.filter(section => {
+                            const deletedDate = new Date(section.deletedAt);
+                            return deletedDate >= thirtyDaysAgo;
+                        });
+                        updateWorld(world.id, { trashedSections: remainingSections });
+                        hasChanges = true;
+                    }
+                }
+            });
+
+            if (hasChanges) {
+                console.log('Auto-deleted trash items older than 30 days');
+            }
+        };
+
+        // Run cleanup on mount and set up interval to check daily
+        cleanupOldTrash();
+        const interval = setInterval(cleanupOldTrash, 24 * 60 * 60 * 1000); // Check every 24 hours
+
+        return () => clearInterval(interval);
+    }, [characters, worlds, updateCharacter, updateWorld]);
 
     // Aggregate all trashed items
     const getTrashedItems = () => {
@@ -254,6 +312,28 @@ export default function TrashPage() {
                                             <Calendar className="w-3 h-3" />
                                             Deleted: {new Date(item.deletedAt).toLocaleDateString()}
                                         </span>
+                                        {(() => {
+                                            const deletedDate = new Date(item.deletedAt);
+                                            const thirtyDaysAgo = new Date();
+                                            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                                            const daysUntilDeletion = Math.ceil((thirtyDaysAgo.getTime() - deletedDate.getTime()) / (1000 * 60 * 60 * 24));
+                                            const daysRemaining = 30 - daysUntilDeletion;
+                                            
+                                            if (daysRemaining <= 0) {
+                                                return (
+                                                    <span className="flex items-center gap-1 text-red-400">
+                                                        <AlertTriangle className="w-3 h-3" />
+                                                        Will be deleted soon
+                                                    </span>
+                                                );
+                                            }
+                                            return (
+                                                <span className="flex items-center gap-1 text-white/50">
+                                                    <Calendar className="w-3 h-3" />
+                                                    {daysRemaining} day{daysRemaining !== 1 ? 's' : ''} remaining
+                                                </span>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
 

@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Pencil, Check, X, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from './button';
+import { MentionInput } from './mention-input';
 
 interface EditableFieldProps {
     value: string;
@@ -81,23 +82,21 @@ export function EditableField({
                 )}
                 <div className="flex items-start gap-2">
                     {multiline ? (
-                        <textarea
-                            ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+                        <MentionInput
                             value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
+                            onChange={setEditValue}
                             onKeyDown={handleKeyDown}
                             placeholder={placeholder}
                             className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 
                                        text-white placeholder:text-white/30 focus:outline-none focus:border-primary/50
                                        resize-y transition-colors"
-                            style={{ minHeight: `${minRows * 1.5}em` }}
+                            multiline
+                            minRows={minRows}
                         />
                     ) : (
-                        <input
-                            ref={inputRef as React.RefObject<HTMLInputElement>}
-                            type="text"
+                        <MentionInput
                             value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
+                            onChange={setEditValue}
                             onKeyDown={handleKeyDown}
                             placeholder={placeholder}
                             className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 

@@ -45,6 +45,11 @@ Use \`/switchmode [name]\` to change.
 | \`/worldbio\` | Create a new world/setting |
 | \`/resume [#CID]\` | Load and continue a character |
 | \`/save\` | Save current progress |
+| \`/workshop [section]\` | Deep-dive into specific section (personality, backstory, relationships, arc) |
+| \`/expand [field]\` | Expand a specific field with rich details |
+| \`/revise [field]\` | Revise and improve existing content |
+| \`/simulate [scenario]\` | Stress-test character in scenarios |
+| \`/analyze [#CID]\` | Expert framework review |
 | \`/progress\` | View Character Dashboard |
 | \`/menu\` | Show all available commands |
 | \`/help [command]\` | Get usage details |

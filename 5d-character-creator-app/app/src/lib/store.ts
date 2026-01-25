@@ -4,12 +4,14 @@ import { Character } from '@/types/character';
 import { World } from '@/types/world';
 import { Project } from '@/types/project';
 import { ChatSession } from '@/types/chat';
+import { CharacterDocument } from '@/types/document';
 
 interface GlobalState {
     characters: Character[];
     worlds: World[];
     projects: Project[];
     chatSessions: ChatSession[];
+    characterDocuments: CharacterDocument[];
 
     activeCharacterId: string | null;
     activeWorldId: string | null;
@@ -57,6 +59,13 @@ interface GlobalState {
     duplicateWorld: (worldId: string) => string | null;
     getProjectForCharacter: (characterId: string) => Project | undefined;
     getProjectForWorld: (worldId: string) => Project | undefined;
+
+    // Document Actions
+    addCharacterDocument: (document: CharacterDocument) => void;
+    updateCharacterDocument: (id: string, updates: Partial<CharacterDocument>) => void;
+    deleteCharacterDocument: (id: string) => void;
+    getCharacterDocuments: (characterId: string) => CharacterDocument[];
+    getCharacterDocument: (id: string) => CharacterDocument | undefined;
 }
 
 export const useStore = create<GlobalState>()(
@@ -66,6 +75,7 @@ export const useStore = create<GlobalState>()(
             worlds: [],
             projects: [],
             chatSessions: [],
+            characterDocuments: [],
 
             activeCharacterId: null,
             activeWorldId: null,
@@ -354,6 +364,31 @@ export const useStore = create<GlobalState>()(
                 if (!world?.projectId) return undefined;
                 return get().projects.find(p => p.id === world.projectId);
             },
+
+            // Document Implementation
+            addCharacterDocument: (document) =>
+                set((state) => ({
+                    characterDocuments: [document, ...state.characterDocuments]
+                })),
+
+            updateCharacterDocument: (id, updates) =>
+                set((state) => ({
+                    characterDocuments: state.characterDocuments.map((doc) =>
+                        doc.id === id
+                            ? { ...doc, ...updates, updatedAt: new Date() }
+                            : doc
+                    ),
+                })),
+
+            deleteCharacterDocument: (id) =>
+                set((state) => ({
+                    characterDocuments: state.characterDocuments.filter((doc) => doc.id !== id),
+                })),
+
+            getCharacterDocuments: (characterId) =>
+                get().characterDocuments.filter((doc) => doc.characterId === characterId),
+
+            getCharacterDocument: (id) => get().characterDocuments.find((doc) => doc.id === id),
         }),
         {
             name: '5d-storage',
@@ -362,6 +397,7 @@ export const useStore = create<GlobalState>()(
                 worlds: state.worlds,
                 projects: state.projects,
                 chatSessions: state.chatSessions,
+                characterDocuments: state.characterDocuments,
                 isSidebarCollapsed: state.isSidebarCollapsed
             }),
         }

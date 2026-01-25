@@ -27,11 +27,22 @@ export interface Character {
     backstoryProse?: string;   // Combined origin, ghost, timeline as narrative
     relationshipsProse?: string; // Contextual relationship descriptions
     arcProse?: string;         // Character arc as narrative prose
+    
+    // NEW: Attached images for prose sections
+    proseImages?: {
+        foundation?: { url: string; aspectRatio: string; position: { x: number; y: number; scale: number }; size?: 'small' | 'medium' | 'large'; name?: string; altText?: string; caption?: string };
+        personality?: { url: string; aspectRatio: string; position: { x: number; y: number; scale: number }; size?: 'small' | 'medium' | 'large'; name?: string; altText?: string; caption?: string };
+        backstory?: { url: string; aspectRatio: string; position: { x: number; y: number; scale: number }; size?: 'small' | 'medium' | 'large'; name?: string; altText?: string; caption?: string };
+        relationships?: { url: string; aspectRatio: string; position: { x: number; y: number; scale: number }; size?: 'small' | 'medium' | 'large'; name?: string; altText?: string; caption?: string };
+        arc?: { url: string; aspectRatio: string; position: { x: number; y: number; scale: number }; size?: 'small' | 'medium' | 'large'; name?: string; altText?: string; caption?: string };
+    };
 
     // NEW: Image handling
-    imageUrl?: string; // Generated avatar
+    imageUrl?: string; // Generated avatar (hero image)
+    infoboxImageUrl?: string; // Separate image for infobox sidebar (if not set, uses imageUrl)
     imageSource?: 'preset' | 'uploaded' | 'generated';
     imageCaption?: string;
+    headerImagePosition?: { x: number; y: number }; // Position offset for header image (for drag-to-reposition)
 
     // NEW: Gallery display
     cardSize?: 'small' | 'medium' | 'large' | 'wide' | 'tall';
@@ -50,6 +61,29 @@ export interface Character {
         title: string;
         content: string;
         order: number;
+        type?: 'text' | 'gallery'; // Section type: text content or image gallery
+        galleryImages?: string[]; // Array of image URLs for gallery sections
+        galleryVideos?: string[]; // Array of video URLs for gallery sections
+        galleryItems?: Array<{
+            id: string;
+            url: string;
+            type: 'image' | 'video';
+            altText?: string;
+            caption?: string;
+            order: number;
+        }>; // Detailed gallery items with metadata
+        galleryDisplayType?: 'grid' | 'masonry' | 'slideshow' | 'card' | 'carousel'; // Display layout for gallery
+        insertAfter?: string; // ID of the section (prose or custom) to insert after
+        // Image attachment for text sections
+        attachedImage?: {
+            url: string;
+            aspectRatio: string; // e.g., "1:1", "16:9", "9:16", "3:4", "4:3"
+            position: { x: number; y: number; scale: number };
+            size?: 'small' | 'medium' | 'large';
+            name?: string;
+            altText?: string;
+            caption?: string;
+        };
     }[];
 
     // NEW: Trashed sections (30-day recycle bin)
@@ -60,6 +94,9 @@ export interface Character {
         deletedAt: Date;
         sourceEntityId: string;
     }[];
+
+    // NEW: Customizable quick navigation sections (bottom nav bar)
+    quickNavSections?: string[]; // Array of section IDs to show in bottom nav
 
     createdAt: Date;
     updatedAt: Date;

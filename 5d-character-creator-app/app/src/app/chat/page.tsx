@@ -1,9 +1,10 @@
-﻿'use client';
+'use client';
 
 import { useState, useRef, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 import { Search, Send, Menu, Sparkles, User, Globe, Folder, FileText, ChevronRight, X, Command, RefreshCw, Trash2, MoreVertical, AlertCircle, Save, Settings, Copy, RotateCcw, Check, Link2, Unlink, GitFork } from 'lucide-react';
+import { EntityLinker } from '@/components/chat/EntityLinker';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -22,40 +23,72 @@ import { ChatSession, Message, AppliedUpdate } from '@/types/chat';
 import { PendingUpdateCard } from '@/components/chat/PendingUpdateCard';
 import { ReloadModal } from '@/components/chat/ReloadModal';
 import { UpdateHistorySidebar } from '@/components/chat/UpdateHistorySidebar';
+import { ModeSwitcher, type ChatMode } from '@/components/chat/ModeSwitcher';
+import { ManualSaveModal } from '@/components/chat/ManualSaveModal';
+import { SessionSetupModal, type SessionSetupConfig } from '@/components/chat/SessionSetupModal';
+import { SaveDocumentModal } from '@/components/chat/SaveDocumentModal';
+import { SaveDocumentOptionModal } from '@/components/chat/SaveDocumentOptionModal';
+import { fuzzyMatchByName, findBestMatch } from '@/lib/fuzzy-match';
+import { createDocumentFromSession, sessionToDocumentContent, generateDocumentTitle } from '@/lib/document-utils';
 import { History } from 'lucide-react';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 // Parse choices from AI response
 function parseChoices(content: string): { cleanContent: string; choices: Choice[] } {
     const choices: Choice[] = [];
     let cleanContent = content;
 
-    // Check for [OPTIONS: ...] or [CHOICES: ...] format
-    const optionsMatch = content.match(/\[(OPTIONS|CHOICES):\s*(.+?)\]/i);
+    // Check for [OPTIONS: ...] or [CHOICES: ...] format (more flexible regex)
+    // Match can be on same line or new line, with or without spaces
+    const optionsPatterns = [
+        /\[(OPTIONS|CHOICES):\s*([^\]]+)\]/i,  // Standard format
+        /\[(OPTIONS|CHOICES):\s*\n([^\]]+)\]/i, // With newline
+        /\[(OPTIONS|CHOICES):\s*([^|\]]+(?:\s*\|\s*[^|\]]+)+)\]/i, // With pipes
+    ];
+    
+    let optionsMatch = null;
+    for (const pattern of optionsPatterns) {
+        optionsMatch = content.match(pattern);
+        if (optionsMatch) break;
+    }
+    
     if (optionsMatch) {
-        const options = optionsMatch[2].split('|').map(s => s.trim());
+        const optionsStr = optionsMatch[2] || optionsMatch[3] || '';
+        // Split by | and clean up
+        const options = optionsStr.split('|').map(s => s.trim()).filter(s => s.length > 0);
         options.forEach((opt, idx) => {
-            choices.push({
-                id: `choice-${idx}`,
-                label: opt,
-            });
+            // Remove any trailing punctuation that might have been included
+            const cleanOpt = opt.replace(/[.,;:!?]+$/, '').trim();
+            if (cleanOpt) {
+                choices.push({
+                    id: `choice-${idx}`,
+                    label: cleanOpt,
+                });
+            }
         });
+        // Remove the options tag from content but preserve the rest
         cleanContent = content.replace(optionsMatch[0], '').trim();
     }
 
     // Fallback: Check for numbered list patterns if no explicit options found
-    const numberedPattern = /(?:Choose one|Select|Pick).*?:\s*\n((?:\d+\.\s*.+\n?)+)/i;
-    const numberedMatch = content.match(numberedPattern);
-    if (numberedMatch && !choices.length) {
-        const lines = numberedMatch[1].split('\n').filter(l => /^\d+\./.test(l.trim()));
-        lines.forEach((line, idx) => {
-            const text = line.replace(/^\d+\.\s*/, '').trim();
-            if (text) {
-                choices.push({
-                    id: `choice-${idx}`,
-                    label: text,
-                });
+    if (!choices.length) {
+        const numberedPattern = /(?:Choose one|Select|Pick|Options?|What would you like).*?:\s*\n((?:\d+\.\s*.+\n?)+)/i;
+        const numberedMatch = content.match(numberedPattern);
+        if (numberedMatch) {
+            const lines = numberedMatch[1].split('\n').filter(l => /^\d+\./.test(l.trim()));
+            lines.forEach((line, idx) => {
+                const text = line.replace(/^\d+\.\s*/, '').trim();
+                if (text) {
+                    choices.push({
+                        id: `choice-${idx}`,
+                        label: text,
+                    });
+                }
+            });
+            if (choices.length > 0) {
+                cleanContent = content.replace(numberedMatch[0], '').trim();
             }
-        });
+        }
     }
 
     return { cleanContent, choices };
@@ -66,10 +99,13 @@ const AVAILABLE_COMMANDS = [
     { id: 'generate-basic', label: '/generate basic', description: 'Quick 5-7 question character', icon: User },
     { id: 'generate-advanced', label: '/generate advanced', description: 'Full 5-phase development', icon: User },
     { id: 'worldbio', label: '/worldbio', description: 'Create a world setting', icon: Globe },
+    { id: 'simulate', label: '/simulate [scenario]', description: 'Stress-test character in scenarios', icon: Sparkles },
+    { id: 'analyze', label: '/analyze [#CID]', description: 'Expert framework review', icon: Search },
+    { id: 'workshop', label: '/workshop [section]', description: 'Deep-dive into specific section', icon: FileText },
+    { id: 'expand', label: '/expand [field]', description: 'Expand a specific field with details', icon: ChevronRight },
+    { id: 'revise', label: '/revise [field]', description: 'Revise and improve existing content', icon: RotateCcw },
     { id: 'menu', label: '/menu', description: 'See all commands', icon: Command },
-    { id: 'help', label: '/help', description: 'Get usage details', icon: AlertCircle },
-    { id: 'simulate', label: '/simulate', description: 'Stress-test in scenarios', icon: Sparkles },
-    { id: 'analyze', label: '/analyze', description: 'Expert framework review', icon: Search },
+    { id: 'help', label: '/help [command]', description: 'Get usage details', icon: AlertCircle },
 ];
 
 function ChatContent() {
@@ -90,7 +126,10 @@ function ChatContent() {
         activeCharacterId,
         activeWorldId,
         activeProjectId,
-        forkSession
+        forkSession,
+        addCharacterDocument,
+        updateCharacterDocument,
+        characterDocuments
     } = useStore();
     const searchParams = useSearchParams();
     const mode = searchParams.get('mode');
@@ -147,7 +186,7 @@ What would you like to create today?`,
     const autoStartRef = useRef(false);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const [appliedUpdates, setAppliedUpdates] = useState<Set<string>>(new Set());
-    const [showGenerateOptions, setShowGenerateOptions] = useState(false); // New state for options toggle
+    const [showGenerateOptions, setShowGenerateOptions] = useState(true); // New state for options toggle - default enabled
 
     // Reload State
     const [showReloadModal, setShowReloadModal] = useState(false);
@@ -166,14 +205,57 @@ What would you like to create today?`,
     const [linkedEntity, setLinkedEntity] = useState<{ type: 'character' | 'world' | 'project'; id: string; name: string } | null>(null);
     const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' | 'warning' } | null>(null);
 
-    // Context Switch / Link Handler
-    const handleSetLinkedEntity = (entity: { type: 'character' | 'world' | 'project'; id: string; name: string } | null) => {
+    // Manual save modal state
+    const [showManualSaveModal, setShowManualSaveModal] = useState(false);
+    const [manualSaveData, setManualSaveData] = useState<{
+        type: 'character' | 'world' | 'project';
+        data: any;
+        originalData?: any;
+    } | null>(null);
+
+    // Save document modal state
+    const [showSaveDocumentModal, setShowSaveDocumentModal] = useState(false);
+    const [showSaveDocumentOptionModal, setShowSaveDocumentOptionModal] = useState(false);
+    const [isExtractingContent, setIsExtractingContent] = useState(false);
+    const [extractedContent, setExtractedContent] = useState<string | null>(null);
+    const [saveDocumentTitle, setSaveDocumentTitle] = useState<string>('');
+    const [saveDocumentContent, setSaveDocumentContent] = useState<string>('');
+
+    // Session setup modal state
+    const [showSessionSetup, setShowSessionSetup] = useState(false);
+    const [sessionSetupMode, setSessionSetupMode] = useState<'script' | 'scene' | 'chat_with' | null>(null);
+    const [sessionSetupConfig, setSessionSetupConfig] = useState<SessionSetupConfig | null>(null);
+
+    // Context Switch / Link Handler with fuzzy matching support
+    const handleSetLinkedEntity = (entity: { type: 'character' | 'world' | 'project'; id: string; name: string } | null, query?: string) => {
         if (!entity) {
             setLinkedEntity(null);
             if (activeSessionId) {
                 updateChatSession(activeSessionId, { relatedId: undefined });
             }
             return;
+        }
+
+        // If query provided, try fuzzy matching first
+        if (query && query.trim()) {
+            let matched: { id: string; name: string } | null = null;
+            
+            if (entity.type === 'character') {
+                matched = findBestMatch(characters, query, 0.5);
+            } else if (entity.type === 'world') {
+                matched = findBestMatch(worlds, query, 0.5);
+            } else if (entity.type === 'project') {
+                matched = findBestMatch(projects, query, 0.5);
+            }
+            
+            if (matched) {
+                entity = { ...entity, id: matched.id, name: matched.name };
+                setToast({
+                    message: `Found "${matched.name}" (fuzzy match)`,
+                    type: 'info'
+                });
+                setTimeout(() => setToast(null), 3000);
+            }
         }
 
         // Check for context switch
@@ -195,6 +277,16 @@ What would you like to create today?`,
         if (activeSessionId) {
             updateChatSession(activeSessionId, { relatedId: entity.id });
         }
+    };
+    
+    // Mode switching handler
+    const handleModeChange = (newMode: ChatMode, targetId?: string) => {
+        const params = new URLSearchParams();
+        params.set('mode', newMode);
+        if (targetId) {
+            params.set('id', targetId);
+        }
+        window.location.href = `/chat?${params.toString()}`;
     };
 
     // Load API config from localStorage
@@ -249,7 +341,92 @@ What would you like to create today?`,
                 }
             }
         }
-    }, [sessionIdParam, chatSessions, activeSessionId, characters, worlds]);
+    }, [sessionIdParam, chatSessions, activeSessionId, characters, worlds, projects]);
+
+    // Auto-link entity when id parameter is present (from character/world page)
+    useEffect(() => {
+        // Check for both id and characterId params
+        const entityIdParam = targetIdParam || searchParams.get('characterId');
+        
+        if (entityIdParam && !linkedEntity && !autoStartRef.current) {
+            // Determine entity type from mode or by checking which store has the ID
+            let entity: { type: 'character' | 'world' | 'project'; id: string; name: string } | null = null;
+            
+            if (mode === 'world' || mode === 'character' || mode === 'project' || mode === 'chat_with' || mode === 'scene' || mode === 'script') {
+                if (mode === 'character' || mode === 'chat_with') {
+                    const char = characters.find(c => c.id === entityIdParam);
+                    if (char) entity = { type: 'character', id: char.id, name: char.name };
+                } else if (mode === 'world') {
+                    const world = worlds.find(w => w.id === entityIdParam);
+                    if (world) entity = { type: 'world', id: world.id, name: world.name };
+                } else if (mode === 'project') {
+                    const project = projects.find(p => p.id === entityIdParam);
+                    if (project) entity = { type: 'project', id: project.id, name: project.name };
+                } else if (mode === 'scene' || mode === 'script') {
+                    // For scene and script modes, use entityIdParam which already checks both characterId and id
+                    const char = characters.find(c => c.id === entityIdParam);
+                    if (char) entity = { type: 'character', id: char.id, name: char.name };
+                }
+            } else {
+                // Try to find in any store
+                const char = characters.find(c => c.id === targetIdParam);
+                const world = worlds.find(w => w.id === targetIdParam);
+                const project = projects.find(p => p.id === targetIdParam);
+                
+                if (char) entity = { type: 'character', id: char.id, name: char.name };
+                else if (world) entity = { type: 'world', id: world.id, name: world.name };
+                else if (project) entity = { type: 'project', id: project.id, name: project.name };
+            }
+            
+            if (entity) {
+                setLinkedEntity(entity);
+                // For script, scene, and chat_with modes, show setup modal instead of welcome message
+                if ((mode === 'script' || mode === 'scene' || mode === 'chat_with') && entity.type === 'character') {
+                    setSessionSetupMode(mode as 'script' | 'scene' | 'chat_with');
+                    setShowSessionSetup(true);
+                    return; // Don't set messages yet, wait for setup
+                }
+                // Set contextual welcome message based on entity type and mode
+                if (entity.type === 'world') {
+                    setMessages([{
+                        id: 'welcome',
+                        role: 'assistant',
+                        content: `Welcome! I'm here to help you develop **${entity.name}**.\n\nWhat would you like to add or change about this world? I can help you:\n\n• Expand world lore and history\n• Develop factions and societies\n• Create new locations\n• Refine the atmosphere and tone\n• Add custom sections\n\nOr I can provide suggestions based on what you already have. What would you like to work on?`,
+                        choices: [
+                            { id: 'expand', label: '📖 Expand Lore', description: 'Add more world details' },
+                            { id: 'factions', label: '⚔️ Develop Factions', description: 'Create or refine factions' },
+                            { id: 'locations', label: '🗺️ Add Locations', description: 'Create new places' },
+                            { id: 'suggestions', label: '💡 Get Suggestions', description: 'AI recommendations' }
+                        ]
+                    }]);
+                } else if (entity.type === 'character') {
+                    setMessages([{
+                        id: 'welcome',
+                        role: 'assistant',
+                        content: `Welcome! I'm here to help you develop **${entity.name}**.\n\nWhat would you like to add or change about this character? I can help you:\n\n• Refine personality and motivations\n• Expand backstory and relationships\n• Develop character arc\n• Add custom sections\n• Create scenes with this character\n\nOr I can provide suggestions based on what you already have. What would you like to work on?`,
+                        choices: [
+                            { id: 'personality', label: '🧠 Refine Personality', description: 'Develop character traits' },
+                            { id: 'backstory', label: '📜 Expand Backstory', description: 'Add more history' },
+                            { id: 'relationships', label: '👥 Develop Relationships', description: 'Build connections' },
+                            { id: 'suggestions', label: '💡 Get Suggestions', description: 'AI recommendations' }
+                        ]
+                    }]);
+                } else if (entity.type === 'project') {
+                    setMessages([{
+                        id: 'welcome',
+                        role: 'assistant',
+                        content: `Welcome! I'm here to help you develop **${entity.name}**.\n\nWhat would you like to add or change about this project? I can help you:\n\n• Develop plot and timeline\n• Integrate characters and worlds\n• Organize story events\n• Track progress\n\nOr I can provide suggestions based on what you already have. What would you like to work on?`,
+                        choices: [
+                            { id: 'plot', label: '📖 Develop Plot', description: 'Build story structure' },
+                            { id: 'timeline', label: '📅 Add Events', description: 'Create timeline entries' },
+                            { id: 'integrate', label: '🔗 Integrate Elements', description: 'Link characters/worlds' },
+                            { id: 'suggestions', label: '💡 Get Suggestions', description: 'AI recommendations' }
+                        ]
+                    }]);
+                }
+            }
+        }
+    }, [targetIdParam, mode, linkedEntity, characters, worlds, projects, searchParams]);
 
     // Auto-Title Logic
     useEffect(() => {
@@ -476,23 +653,103 @@ What would you like to create today?`,
     };
 
     // Parse save blocks from AI responses
-    const parseSaveBlock = (content: string): { type: 'character' | 'world' | 'project'; data: any } | null => {
-        // Match ```json:save:TYPE ... ``` blocks
-        const saveBlockPattern = /```json:save:(character|world|project)\s*\n([\s\S]*?)\n```/i;
-        const match = content.match(saveBlockPattern);
+    const parseSaveBlock = (content: string): { type: 'character' | 'world' | 'project'; data: any; targetSection?: string } | null => {
+        // Match ```json:save:TYPE[:section] ... ``` blocks (with backticks)
+        let saveBlockPattern = /```json:save:(character|world|project)(?::(\w+))?\s*\n([\s\S]*?)\n```/i;
+        let match = content.match(saveBlockPattern);
+        
+        // If no match with backticks, try without backticks (plain text format)
+        if (!match) {
+            saveBlockPattern = /json:save:(character|world|project)(?::(\w+))?\s*\n([\s\S]*?)(?=\n\n|\n$|$)/i;
+            match = content.match(saveBlockPattern);
+        }
 
         if (!match) return null;
 
-        const [, type, jsonStr] = match;
+        const [, type, targetSection, jsonStr] = match;
 
         try {
-            const data = JSON.parse(jsonStr);
+            // Sanitize JSON string by escaping control characters inside string literals
+            const sanitizeJsonString = (str: string): string => {
+                let result = '';
+                let inString = false;
+                let escapeNext = false;
+                
+                for (let i = 0; i < str.length; i++) {
+                    const char = str[i];
+                    const code = char.charCodeAt(0);
+                    
+                    // Track if we're inside a string (between unescaped quotes)
+                    if (char === '"' && !escapeNext) {
+                        inString = !inString;
+                        result += char;
+                        escapeNext = false;
+                        continue;
+                    }
+                    
+                    // Handle escape sequences
+                    if (escapeNext) {
+                        result += char;
+                        escapeNext = false;
+                        continue;
+                    }
+                    
+                    if (char === '\\') {
+                        escapeNext = true;
+                        result += char;
+                        continue;
+                    }
+                    
+                    // If we're inside a string, escape control characters
+                    if (inString && code >= 0x00 && code <= 0x1F) {
+                        // Control characters must be escaped in JSON strings
+                        if (char === '\n') {
+                            result += '\\n';
+                        } else if (char === '\r') {
+                            result += '\\r';
+                        } else if (char === '\t') {
+                            result += '\\t';
+                        } else {
+                            // Other control characters get Unicode escape
+                            result += '\\u' + ('0000' + code.toString(16)).slice(-4);
+                        }
+                    } else {
+                        result += char;
+                    }
+                }
+                
+                return result;
+            };
+
+            // Try parsing the original string first
+            let data;
+            try {
+                data = JSON.parse(jsonStr);
+            } catch (parseError: any) {
+                // If parsing fails due to control characters, try sanitizing
+                if (parseError.message && parseError.message.includes('control character')) {
+                    const sanitized = sanitizeJsonString(jsonStr);
+                    try {
+                        data = JSON.parse(sanitized);
+                    } catch (secondError) {
+                        console.error('Failed to parse even after sanitization:', secondError);
+                        console.error('Original error:', parseError);
+                        throw secondError;
+                    }
+                } else {
+                    // Re-throw if it's a different error
+                    throw parseError;
+                }
+            }
+
             return {
                 type: type as 'character' | 'world' | 'project',
-                data
+                data,
+                targetSection: targetSection || undefined
             };
         } catch (e) {
             console.error('Failed to parse save block JSON:', e);
+            console.error('JSON string that failed (first 1000 chars):', jsonStr.substring(0, 1000));
             return null;
         }
     };
@@ -527,11 +784,172 @@ What would you like to create today?`,
             content: messageContent.trim(),
         };
 
+        // Mode-specific system instructions
+        const getModeInstruction = () => {
+            const currentMode = mode || 'chat';
+            
+            // Add session setup config if available (this is in getModeInstruction, but setupContext is added later)
+            // This section is just for mode instructions, full setup context is added in sendMessage
+            
+            switch (currentMode) {
+                case 'character':
+                    return `
+                    [MODE: CHARACTER CREATOR]
+                    You are helping create or refine a character. Focus on:
+                    - Character development through 5 phases (Foundation, Personality, Backstory, Relationships, Arc)
+                    - Psychological depth and narrative structure
+                    - Use interactive questions to guide the user
+                    - When ready, output a save block with character data
+                    `;
+                case 'world':
+                    return `
+                    [MODE: WORLD BUILDER]
+                    You are helping create or refine a world/setting. Focus on:
+                    - World-building elements (geography, history, factions, magic/tech systems)
+                    - Atmosphere, tone, and cultural details
+                    - Ask questions ONE AT A TIME about different aspects
+                    - When ready, output a save block with world data
+                    `;
+                case 'project':
+                    return `
+                    [MODE: PROJECT MANAGER]
+                    You are helping manage a story project. Focus on:
+                    - Plot structure, timeline, and story events
+                    - Character and world integration
+                    - Project organization and progress tracking
+                    - When ready, output a save block with project data
+                    `;
+                case 'workshop':
+                    return `
+                    [MODE: WORKSHOP]
+                    You are deeply exploring a specific aspect of a character. Focus on:
+                    - Probing questions about the target section
+                    - Psychological analysis and narrative depth
+                    - Refinement and expansion of existing content
+                    - When ready, output a section-specific save block
+                    `;
+                case 'lore':
+                    return `
+                    [MODE: LORE EXPLORER]
+                    You are exploring and expanding world lore. Focus on:
+                    - Historical events, cultural details, and world depth
+                    - Connections between lore elements
+                    - Rich narrative descriptions
+                    `;
+                case 'scene':
+                    return `
+                    [MODE: SCENE WRITER / ROLEPLAY]
+                    You are creating interactive roleplay scenes. CRITICAL INSTRUCTIONS:
+                    - IMMEDIATELY begin writing the scene/roleplay when the user requests it
+                    - Use the FULL character and world data provided in [SESSION SETUP CONFIGURATION]
+                    - Write in character voice, staying true to their personality, background, and motivations
+                    - Include dialogue, actions, descriptions, and character interactions
+                    - Create an engaging scene that the user can interact with
+                    - DO NOT just acknowledge - ACTUALLY WRITE THE SCENE CONTENT
+                    - Format as narrative prose with character dialogue and actions
+                    - Make it immersive and detailed based on the world and character context
+                    `;
+                case 'script':
+                    return `
+                    [MODE: SCRIPT CREATION]
+                    You are creating scripts with multiple characters. CRITICAL INSTRUCTIONS:
+                    - This is SCRIPT CREATION mode, NOT roleplay mode. You are writing a script, not creating an interactive roleplay.
+                    - If the user says "Start creating the script" or similar, FIRST ask 3-5 focused questions about the script (genre, central conflict, key scenes, tone, etc.) with options if options are enabled
+                    - After gathering the script details through questions, THEN generate the full script content
+                    - Use the FULL character and world data provided in [SESSION SETUP CONFIGURATION]
+                    - Write in proper script format with character names, dialogue, and stage directions
+                    - Maintain character voice consistency based on their personality and background
+                    - Include scene descriptions, character actions, and dialogue
+                    - Format as:
+                      CHARACTER NAME
+                      (action or direction)
+                      Dialogue here.
+                      
+                      ANOTHER CHARACTER
+                      More dialogue.
+                    - Make it authentic to the characters' personalities and the world setting
+                    - DO NOT convert this to roleplay mode - you are writing a script, not creating interactive choices
+                    `;
+                case 'chat_with':
+                    return `
+                    [MODE: CHARACTER ROLEPLAY / CHAT WITH CHARACTER]
+                    You are embodying a character for interactive roleplay. CRITICAL INSTRUCTIONS:
+                    - Stay IN CHARACTER at all times - you ARE the character, not an AI assistant
+                    - Use the FULL character data provided in [LINKED CHARACTER - FULL CONTEXT] to inform your responses
+                    - Speak in the character's voice, using their vocabulary, speech patterns, and worldview
+                    - Reflect their personality, background, relationships, and motivations in every response
+                    - React authentically based on their flaws, fears, and desires
+                    - Do NOT break character or acknowledge you're an AI unless explicitly asked
+                    - Respond as if you are the character having a real conversation
+                    - Use the character's backstory and relationships to inform your responses
+                    `;
+                default:
+                    return '';
+            }
+        };
+        
+        const modeInstruction = getModeInstruction();
+        
+        // Add session setup config if available
+        let setupContext = '';
+        if (sessionSetupConfig && (mode === 'script' || mode === 'scene')) {
+            setupContext = '\n\n[SESSION SETUP CONFIGURATION - USE THIS DATA TO GENERATE CONTENT]\n';
+            
+            // Include FULL character data, not just names
+            if (sessionSetupConfig.selectedCharacters.length > 0) {
+                const selectedChars = sessionSetupConfig.selectedCharacters
+                    .map(id => characters.find(c => c.id === id))
+                    .filter(Boolean);
+                
+                setupContext += `\nSELECTED CHARACTERS (${selectedChars.length}):\n`;
+                selectedChars.forEach((char, idx) => {
+                    setupContext += `\nCharacter ${idx + 1}: ${char.name}\n`;
+                    setupContext += `FULL CHARACTER DATA:\n${JSON.stringify(char, null, 2)}\n`;
+                });
+            }
+            
+            if (sessionSetupConfig.generateRandomCharacters) {
+                setupContext += '\nGenerate Random Characters: Yes\n';
+            }
+            
+            // Include FULL world data, not just names
+            if (sessionSetupConfig.selectedWorlds.length > 0) {
+                const selectedWorlds = sessionSetupConfig.selectedWorlds
+                    .map(id => worlds.find(w => w.id === id))
+                    .filter(Boolean);
+                
+                setupContext += `\nSELECTED WORLDS (${selectedWorlds.length}):\n`;
+                selectedWorlds.forEach((world, idx) => {
+                    setupContext += `\nWorld ${idx + 1}: ${world.name}\n`;
+                    setupContext += `FULL WORLD DATA:\n${JSON.stringify(world, null, 2)}\n`;
+                });
+            }
+            
+            if (sessionSetupConfig.generateRandomWorlds) {
+                setupContext += '\nGenerate Random World: Yes\n';
+            }
+            
+            if (sessionSetupConfig.sceneType) {
+                setupContext += `\nScene Type: ${sessionSetupConfig.sceneType}\n`;
+            }
+            if (sessionSetupConfig.tone) {
+                setupContext += `Tone: ${sessionSetupConfig.tone}\n`;
+            }
+            if (sessionSetupConfig.length) {
+                setupContext += `Length: ${sessionSetupConfig.length}\n`;
+            }
+            
+            setupContext += '\nCRITICAL: You have access to the FULL character and world data above. Use this information to create authentic, detailed content that reflects their personalities, backgrounds, and world settings.';
+        }
+        
         const systemInstruction = `
         You are the 5D Character Creator AI.
         
+        ${modeInstruction}${setupContext}
+        
         CRITICAL: To update the Character or World, output a JSON block.
-        Format:
+        
+        **Standard Format (use triple backticks):**
         \`\`\`json:save:character
         {
           "name": "Updated Name",
@@ -540,17 +958,65 @@ What would you like to create today?`,
           "personalityProse": "Detailed description of personality...",
           "backstoryProse": "Narrative backstory...",
           "relationshipsProse": "Notes on key relationships...",
+          "arcProse": "Character arc narrative...",
           "customSections": [
-             { "id": "sect-1", "title": "Secrets", "content": "..." }
+             { "id": "sect-1", "title": "Secrets", "content": "...", "order": 10 }
           ]
         }
         \`\`\`
         
+        **World Format:**
+        \`\`\`json:save:world
+        {
+          "name": "World Name",
+          "genre": "Fantasy",
+          "tone": "Dark",
+          "description": "World overview...",
+          "overviewProse": "Detailed world description...",
+          "historyProse": "Historical background...",
+          "factionsProse": "Faction details...",
+          "geographyProse": "Geographical information...",
+          "locations": ["Location 1", "Location 2"],
+          "factions": [{ "name": "Faction", "description": "..." }],
+          "magicSystem": "Magic system description...",
+          "technology": "Technology description...",
+          "customSections": [
+            { "title": "Custom Section", "content": "...", "order": 10 }
+          ]
+        }
+        \`\`\`
+        
+        **Section-Specific Format (for targeted updates):**
+        \`\`\`json:save:character:personality
+        {
+          "personalityProse": "Updated personality description..."
+        }
+        \`\`\`
+        
+        **Creating New Custom Sections:**
+        If the content doesn't fit into standard fields, create custom sections:
+        \`\`\`json:save:character
+        {
+          "customSections": [
+            { "title": "Secrets", "content": "Hidden information...", "order": 10 },
+            { "title": "Quirks", "content": "Unique traits...", "order": 20 }
+          ]
+        }
+        \`\`\`
+        
+        Available section targets for characters: personality, backstory, relationships, arc, foundation
+        Available section targets for worlds: overview, history, factions, geography
+        
+        **IMPORTANT:** Always use triple backticks (\`\`\`) around the json:save block!
+        
         Rules:
         1. PREFER the "Prose" fields (personalityProse, backstoryProse) for rich text content over arrays.
         2. For arrays (motivations, flaws, etc), provide the COMPLETE list if you change it.
-        3. For customSections, provide the COMPLETE list.
-        4. Do NOT output this block until the content is finalized.
+        3. For customSections, you can add new sections or update existing ones by ID.
+        4. Use section-specific format when updating only one section (e.g., just personality).
+        5. Do NOT output this block until the content is finalized.
+        6. When linked to an existing entity, merge intelligently - only include fields you're updating.
+        7. If content doesn't fit standard fields, create appropriate custom sections automatically.
         
         For PROJECTS, use this format:
         \`\`\`json:save:project
@@ -568,7 +1034,19 @@ What would you like to create today?`,
         \`\`\`
         `;
 
-        let effectiveInstruction = activePersona || systemInstruction;
+        // For chat_with mode, combine persona with mode instruction and setup context
+        let effectiveInstruction: string;
+        if (activePersona && mode === 'chat_with') {
+            // Combine persona with mode instruction and setup context
+            const modeInstruction = getModeInstruction();
+            effectiveInstruction = `${activePersona}\n\n${modeInstruction}${setupContext}`;
+        } else if (activePersona) {
+            // For other personas (workshop mode, etc), use persona but add setup context
+            effectiveInstruction = `${activePersona}${setupContext}`;
+        } else {
+            // Normal mode - use system instruction with mode and setup context
+            effectiveInstruction = systemInstruction;
+        }
 
         // Inject Session Context/Memory
         if (activeSessionId) {
@@ -590,11 +1068,18 @@ What would you like to create today?`,
         }
 
         // Inject FULL linked entity context for chat memory
-        if (linkedEntity) {
+        // For chat_with mode, the persona already includes full character data, but we ensure it's there
+        // But don't duplicate if already in session setup config or persona
+        if (linkedEntity && (!sessionSetupConfig || 
+            (linkedEntity.type === 'character' && !sessionSetupConfig.selectedCharacters.includes(linkedEntity.id)) ||
+            (linkedEntity.type === 'world' && !sessionSetupConfig.selectedWorlds.includes(linkedEntity.id)))) {
             if (linkedEntity.type === 'character') {
                 const char = characters.find(c => c.id === linkedEntity.id);
                 if (char) {
-                    effectiveInstruction += `\n\n[LINKED CHARACTER - FULL CONTEXT]\nYou are actively working on this character. Here is their complete profile:\n${JSON.stringify(char, null, 2)}`;
+                    // For chat_with mode, persona already has the data, but add it here for other modes
+                    if (mode !== 'chat_with' || !activePersona) {
+                        effectiveInstruction += `\n\n[LINKED CHARACTER - FULL CONTEXT]\nYou are actively working on this character. Here is their complete profile:\n${JSON.stringify(char, null, 2)}`;
+                    }
                 }
             } else if (linkedEntity.type === 'world') {
                 const world = worlds.find(w => w.id === linkedEntity.id);
@@ -615,7 +1100,12 @@ What would you like to create today?`,
 
         // Inject Options Instruction if enabled
         if (showGenerateOptions) {
-            effectiveInstruction += "\n\nIMPORTANT: For every question you ask, OR if I ask for options, provide recommended answers in the standard options format: [OPTIONS: choice1 | choice2 ...].\nCRITICAL: Even if you just generated a JSON Save Block or applied updates, YOU MUST still provide options for the next step/question at the very end of your response.";
+            if (mode === 'script') {
+                // For script mode, ask questions first, then generate script
+                effectiveInstruction += "\n\nIMPORTANT: For SCRIPT CREATION mode, when the user requests to start creating a script:\n1. FIRST ask 3-5 focused questions about the script (genre, central conflict, key scenes, tone, structure, etc.) with options: [OPTIONS: choice1 | choice2 ...]\n2. Wait for the user's answers\n3. THEN generate the full script based on their responses\n4. DO NOT convert to roleplay mode - you are writing a script, not creating interactive roleplay choices\n5. After generating the script, you may ask if they want to refine or expand any scenes with options.";
+            } else {
+                effectiveInstruction += "\n\nIMPORTANT: For every question you ask, OR if I ask for options, provide recommended answers in the standard options format: [OPTIONS: choice1 | choice2 ...].\nCRITICAL: Even if you just generated a JSON Save Block or applied updates, YOU MUST still provide options for the next step/question at the very end of your response.";
+            }
         }
 
         const userMessageWithContext: Message = {
@@ -681,6 +1171,9 @@ What would you like to create today?`,
                 }
             }
 
+            // Parse final content and choices after streaming completes
+            const { cleanContent: finalCleanContent, choices: finalChoices } = parseChoices(fullContent);
+
             // Check for save blocks and attach pending update
             const saveBlock = parseSaveBlock(fullContent);
             if (saveBlock) {
@@ -695,6 +1188,8 @@ What would you like to create today?`,
                         m.id === assistantMessage.id
                             ? {
                                 ...m,
+                                content: finalCleanContent,
+                                choices: finalChoices.length > 0 ? finalChoices : m.choices,
                                 pendingUpdate: {
                                     type: saveBlock.type,
                                     data: saveBlock.data,
@@ -702,6 +1197,15 @@ What would you like to create today?`,
                                     targetName: saveBlock.data.name || targetEntity?.name || 'New Entity'
                                 }
                             }
+                            : m
+                    )
+                );
+            } else {
+                // Even if no save block, update with final parsed choices
+                setMessages(prev =>
+                    prev.map(m =>
+                        m.id === assistantMessage.id
+                            ? { ...m, content: finalCleanContent, choices: finalChoices.length > 0 ? finalChoices : m.choices }
                             : m
                     )
                 );
@@ -722,7 +1226,7 @@ What would you like to create today?`,
                 setActiveSessionId(newId);
                 const title = messageContent.slice(0, 40) + (messageContent.length > 40 ? '...' : '');
 
-                addChatSession({
+                const newSession: ChatSession = {
                     id: newId,
                     title,
                     lastMessage: cleanContentFinal.slice(0, 100),
@@ -731,13 +1235,77 @@ What would you like to create today?`,
                     updatedAt: now,
                     mode: (mode as any) || 'chat',
                     relatedId: activeCharacterId || activeWorldId || activeProjectId || undefined
-                });
+                };
+
+                addChatSession(newSession);
+
+                // Auto-save document for script/roleplay/chat_with modes with character
+                if ((mode === 'script' || mode === 'scene' || mode === 'chat_with') && linkedEntity?.type === 'character') {
+                    // Auto-save after a short delay to ensure session is saved
+                    setTimeout(() => {
+                        const session = chatSessions.find(s => s.id === newId) || newSession;
+                        const docType = mode === 'script' ? 'script' : 'roleplay';
+                        const doc = createDocumentFromSession(session, linkedEntity.id, docType);
+                        addCharacterDocument(doc);
+                        setToast({
+                            message: `Document "${doc.title}" auto-saved!`,
+                            type: 'success'
+                        });
+                        setTimeout(() => setToast(null), 3000);
+                    }, 500);
+                }
             } else {
-                updateChatSession(activeSessionId, {
+                const updatedSessionData = {
                     lastMessage: cleanContentFinal.slice(0, 100),
                     messages: [...messages, userMessage, { ...assistantMessage, content: fullContent }],
                     updatedAt: now
-                });
+                };
+                updateChatSession(activeSessionId, updatedSessionData);
+
+                // Auto-save document update for script/roleplay/chat_with modes with character
+                // Only auto-save if we have at least 2 messages (user + assistant)
+                if ((mode === 'script' || mode === 'scene' || mode === 'chat_with') && linkedEntity?.type === 'character') {
+                    const finalMessages = [...messages, userMessage, { ...assistantMessage, content: fullContent }];
+                    if (finalMessages.length >= 2) {
+                        // Check if document already exists for this session
+                        const existingDocs = characterDocuments.filter(doc => 
+                            doc.metadata?.sessionId === activeSessionId
+                        );
+                        
+                        if (existingDocs.length > 0) {
+                            // Update existing document
+                            const existingDoc = existingDocs[0];
+                            const currentSession = chatSessions.find(s => s.id === activeSessionId);
+                            if (currentSession) {
+                                const updatedSession = {
+                                    ...currentSession,
+                                    ...updatedSessionData,
+                                    messages: finalMessages
+                                };
+                                const updatedContent = sessionToDocumentContent(updatedSession, existingDoc.type);
+                                updateCharacterDocument(existingDoc.id, {
+                                    content: updatedContent,
+                                    updatedAt: now
+                                });
+                            }
+                        } else if (finalMessages.length === 2) {
+                            // Create new document on first assistant response
+                            setTimeout(() => {
+                                const session = chatSessions.find(s => s.id === activeSessionId);
+                                if (session) {
+                                    const docType = mode === 'script' ? 'script' : 'roleplay';
+                                    const doc = createDocumentFromSession(session, linkedEntity.id, docType);
+                                    addCharacterDocument(doc);
+                                    setToast({
+                                        message: `Document "${doc.title}" auto-saved!`,
+                                        type: 'success'
+                                    });
+                                    setTimeout(() => setToast(null), 3000);
+                                }
+                            }, 500);
+                        }
+                    }
+                }
             }
 
         } catch (err) {
@@ -751,6 +1319,11 @@ What would you like to create today?`,
     useEffect(() => {
         if (!hasApiKey || autoStartRef.current || isLoading) return;
 
+        // Don't auto-start if we have a linked entity with contextual message (already set in previous effect)
+        if (linkedEntity && messages.length === 1 && messages[0].id === 'welcome' && messages[0].choices) {
+            return; // Contextual welcome already set, don't override
+        }
+
         if (promptParam) {
             autoStartRef.current = true;
             sendMessage(decodeURIComponent(promptParam));
@@ -763,21 +1336,40 @@ What would you like to create today?`,
             if (char) {
                 autoStartRef.current = true;
 
-                // Set Persona Context
+                // Auto-link the entity for chat_with mode
+                if (!linkedEntity || linkedEntity.id !== char.id) {
+                    setLinkedEntity({ type: 'character', id: char.id, name: char.name });
+                    if (activeSessionId) {
+                        updateChatSession(activeSessionId, { relatedId: char.id });
+                    }
+                }
+
+                // Set Persona Context with FULL character data
                 const persona = `
-                [SYSTEM: ACT AS CHARACTER]
-                You are now embodying the character "${char.name}".
+                [SYSTEM: ACT AS CHARACTER - YOU ARE ${char.name.toUpperCase()}]
+                You are now embodying the character "${char.name}". You ARE this character, not an AI assistant.
                 
-                PROFILE:
-                - Role: ${char.role}
-                - Archetype: ${char.archetype}
-                - Concept: ${char.coreConcept}
-                - Motivations: ${char.motivations?.join(', ')}
-                - Flaws: ${char.flaws?.join(', ')}
-                - Voice/Tone: Stay in character. Use their vocabulary. Reflect their worldview.
+                CRITICAL: Use the FULL CHARACTER DATA provided below to inform every response. Stay in character at all times.
                 
-                SCENARIO:
-                The user is talking to you directly. Do not break character unless asked to [Generate Scene].
+                CHARACTER SUMMARY:
+                - Name: ${char.name}
+                - Role: ${char.role || 'Not specified'}
+                - Archetype: ${char.archetype || 'Not specified'}
+                - Core Concept: ${char.coreConcept || 'Not specified'}
+                - Motivations: ${char.motivations?.join(', ') || 'Not specified'}
+                - Flaws: ${char.flaws?.join(', ') || 'Not specified'}
+                
+                FULL CHARACTER DATA (use this for authentic responses):
+                ${JSON.stringify(char, null, 2)}
+                
+                INSTRUCTIONS:
+                - Speak as ${char.name} would speak - use their voice, vocabulary, and speech patterns
+                - Reflect their personality, background, and worldview in every response
+                - Use their backstory, relationships, and motivations to inform your reactions
+                - Stay true to their flaws, fears, and desires
+                - The user is talking to you directly as ${char.name}
+                - Do NOT break character or acknowledge you're an AI unless explicitly asked
+                - Respond naturally and authentically as the character
                 `;
 
                 setActivePersona(persona);
@@ -851,12 +1443,14 @@ What would you like to create today?`,
             }
         }
 
-        if (mode) {
+        // Only auto-start generic mode commands if no entity is linked
+        if (mode && !linkedEntity) {
             let command = '';
             switch (mode) {
                 case 'character': command = '/generate basic'; break;
                 case 'world': command = '/worldbio'; break;
                 case 'scene': command = 'Help me write a scene involving my characters.'; break;
+                case 'script': command = 'Help me create a script with multiple characters.'; break;
                 case 'lore': command = 'I want to explore the history and lore of my world.'; break;
             }
 
@@ -865,7 +1459,7 @@ What would you like to create today?`,
                 sendMessage(command);
             }
         }
-    }, [mode, promptParam, hasApiKey, characters]);
+    }, [mode, promptParam, hasApiKey, characters, linkedEntity, messages]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -895,32 +1489,14 @@ What would you like to create today?`,
         navigator.clipboard.writeText(text);
     };
 
-    const parseSaveData = (content: string) => {
-        // Regex to find [SAVE:TYPE {JSON}]
-        // Simplified: Search for a code block with a header like "Save Character" or specific tag
-        // Actually, let's use a specific custom block: ```json:save:character
-
-        const saveRegex = /```json:save:(character|world)\n([\s\S]*?)\n```/;
-        const match = content.match(saveRegex);
-
-        if (match) {
-            try {
-                const type = match[1] as 'character' | 'world';
-                const data = JSON.parse(match[2]);
-                return { type, data, cleanContent: content.replace(match[0], '').trim() };
-            } catch (e) {
-                console.error("Failed to parse save block", e);
-            }
-        }
-        return null;
-    };
-
-    const handleSaveEntity = (type: 'character' | 'world' | 'project', data: any, messageId?: string) => {
+    // Enhanced save handler with intelligent merging and section-specific updates
+    const handleSaveEntity = (type: 'character' | 'world' | 'project', data: any, messageId?: string, targetSection?: string) => {
         console.log('=== handleSaveEntity called ===');
         console.log('Type:', type);
         console.log('Data:', data);
         console.log('LinkedEntity:', linkedEntity);
         console.log('targetIdParam:', targetIdParam);
+        console.log('TargetSection:', targetSection);
 
         if (type === 'character') {
             // NORMALIZE DATA: Map legacy/guessed keys to Prose fields
@@ -968,13 +1544,91 @@ What would you like to create today?`,
 
             if (charToUpdate) {
                 console.log('UPDATING existing character:', charToUpdate.id);
+                
+                // Intelligent merging: preserve existing data unless explicitly provided
+                const mergedData: any = { ...charToUpdate };
+                const customSectionsToAdd: any[] = [];
+                
+                // If targetSection is specified, only update that section
+                if (targetSection) {
+                    const sectionFieldMap: Record<string, string> = {
+                        'personality': 'personalityProse',
+                        'backstory': 'backstoryProse',
+                        'relationships': 'relationshipsProse',
+                        'arc': 'arcProse',
+                        'foundation': 'coreConcept'
+                    };
+                    const fieldName = sectionFieldMap[targetSection.toLowerCase()] || targetSection;
+                    if (data[fieldName] !== undefined) {
+                        mergedData[fieldName] = data[fieldName];
+                    }
+                } else {
+                    // Merge all provided fields intelligently
+                    Object.keys(data).forEach(key => {
+                        if (key === 'id' || key === 'updatedAt' || key === 'createdAt' || key === 'customSections') return;
+                        
+                        // For prose fields, replace if provided
+                        if (key.endsWith('Prose') || key === 'coreConcept') {
+                            if (data[key] !== undefined && data[key] !== null && data[key] !== '') {
+                                mergedData[key] = data[key];
+                            }
+                        }
+                        // For arrays, merge intelligently (append new items, preserve existing)
+                        else if (Array.isArray(data[key])) {
+                            const existing = mergedData[key] || [];
+                            const newItems = data[key];
+                            // Merge arrays: keep existing items, add new unique ones
+                            const merged = [...existing];
+                            newItems.forEach((item: any) => {
+                                if (typeof item === 'string' && !merged.includes(item)) {
+                                    merged.push(item);
+                                } else if (typeof item === 'object' && item.id && !merged.find((e: any) => e.id === item.id)) {
+                                    merged.push(item);
+                                }
+                            });
+                            mergedData[key] = merged;
+                        }
+                        // For other fields, replace if provided
+                        else if (data[key] !== undefined && data[key] !== null) {
+                            mergedData[key] = data[key];
+                        }
+                    });
+                    
+                    // Handle customSections - merge intelligently
+                    if (data.customSections && Array.isArray(data.customSections)) {
+                        const existingSections = mergedData.customSections || [];
+                        const newSections = data.customSections;
+                        
+                        // For each new section, check if it exists (by id or title match)
+                        newSections.forEach((newSection: any) => {
+                            if (newSection.id) {
+                                const existing = existingSections.find((s: any) => s.id === newSection.id);
+                                if (existing) {
+                                    // Update existing section
+                                    Object.assign(existing, newSection);
+                                } else {
+                                    // New section with ID - add it
+                                    customSectionsToAdd.push(newSection);
+                                }
+                            } else {
+                                // New section without ID - create it
+                                const sectionWithId = {
+                                    ...newSection,
+                                    id: `custom-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                    order: (existingSections.length + customSectionsToAdd.length) * 10
+                                };
+                                customSectionsToAdd.push(sectionWithId);
+                            }
+                        });
+                        
+                        if (customSectionsToAdd.length > 0) {
+                            mergedData.customSections = [...existingSections, ...customSectionsToAdd];
+                        }
+                    }
+                }
+                
                 updateCharacter(charToUpdate.id, {
-                    ...data,
-                    motivations: Array.isArray(data.motivations) ? data.motivations : charToUpdate.motivations,
-                    flaws: Array.isArray(data.flaws) ? data.flaws : charToUpdate.flaws,
-                    allies: Array.isArray(data.allies) ? data.allies : charToUpdate.allies,
-                    enemies: Array.isArray(data.enemies) ? data.enemies : charToUpdate.enemies,
-                    customSections: Array.isArray(data.customSections) ? data.customSections : charToUpdate.customSections,
+                    ...mergedData,
                     updatedAt: new Date()
                 });
                 // Update linked entity name if it changed
@@ -1033,6 +1687,55 @@ What would you like to create today?`,
                 if (activeSessionId) updateChatSession(activeSessionId, { relatedId: id });
             }
         } else if (type === 'world') {
+            // NORMALIZE DATA: Flatten nested objects and map to World type
+            const normalizedData: any = { ...data };
+            
+            // Handle nested tone object
+            if (normalizedData.tone && typeof normalizedData.tone === 'object') {
+                const toneObj = normalizedData.tone;
+                if (toneObj.atmosphere || toneObj.mood) {
+                    normalizedData.tone = toneObj.atmosphere || toneObj.mood || JSON.stringify(toneObj);
+                }
+            }
+            
+            // Handle nested technology object
+            if (normalizedData.technology && typeof normalizedData.technology === 'object') {
+                const techObj = normalizedData.technology;
+                if (techObj.systems && Array.isArray(techObj.systems)) {
+                    normalizedData.technology = techObj.systems.join(', ');
+                } else if (techObj.control) {
+                    normalizedData.technology = JSON.stringify(techObj);
+                }
+            }
+            
+            // Handle nested society object
+            if (normalizedData.society && typeof normalizedData.society === 'object') {
+                const societyObj = normalizedData.society;
+                if (societyObj.structure) {
+                    normalizedData.societies = normalizedData.societies || [];
+                    if (!normalizedData.societies.includes(societyObj.structure)) {
+                        normalizedData.societies.push(societyObj.structure);
+                    }
+                }
+                // Store society info in description or overviewProse if needed
+                if (societyObj.resistance && !normalizedData.overviewProse) {
+                    normalizedData.overviewProse = `Society Structure: ${societyObj.structure || 'Unknown'}\n\nResistance Movements: ${societyObj.resistance || 'None documented'}`;
+                }
+            }
+            
+            // Map locations array properly
+            if (normalizedData.locations && Array.isArray(normalizedData.locations)) {
+                // Keep as is - locations is an array in World type
+            }
+            
+            // Map description to overviewProse if overviewProse is missing
+            if (normalizedData.description && !normalizedData.overviewProse) {
+                normalizedData.overviewProse = normalizedData.description;
+            }
+            
+            // Apply normalization
+            data = normalizedData;
+            
             // Priority: linkedEntity (if world type) > targetIdParam > data.id match
             let existingId: string | null = null;
 
@@ -1056,8 +1759,91 @@ What would you like to create today?`,
 
             if (worldToUpdate) {
                 console.log('UPDATING existing world:', worldToUpdate.id);
+                
+                // Intelligent merging for worlds
+                const mergedData: any = { ...worldToUpdate };
+                const customSectionsToAdd: any[] = [];
+                
+                // If targetSection is specified, only update that section
+                if (targetSection) {
+                    const sectionFieldMap: Record<string, string> = {
+                        'overview': 'overviewProse',
+                        'history': 'historyProse',
+                        'factions': 'factionsProse',
+                        'geography': 'geographyProse'
+                    };
+                    const fieldName = sectionFieldMap[targetSection.toLowerCase()] || targetSection;
+                    if (data[fieldName] !== undefined) {
+                        mergedData[fieldName] = data[fieldName];
+                    }
+                } else {
+                    // Merge all provided fields intelligently
+                    Object.keys(data).forEach(key => {
+                        if (key === 'id' || key === 'updatedAt' || key === 'createdAt' || key === 'customSections') return;
+                        
+                        // For prose fields, replace if provided
+                        if (key.endsWith('Prose')) {
+                            if (data[key] !== undefined && data[key] !== null && data[key] !== '') {
+                                mergedData[key] = data[key];
+                            }
+                        }
+                        // For arrays, merge intelligently
+                        else if (Array.isArray(data[key])) {
+                            const existing = mergedData[key] || [];
+                            const newItems = data[key];
+                            const merged = [...existing];
+                            newItems.forEach((item: any) => {
+                                if (typeof item === 'string' && !merged.includes(item)) {
+                                    merged.push(item);
+                                } else if (typeof item === 'object' && item.id && !merged.find((e: any) => e.id === item.id)) {
+                                    merged.push(item);
+                                } else if (typeof item === 'object' && item.name && !merged.find((e: any) => e.name === item.name)) {
+                                    merged.push(item);
+                                }
+                            });
+                            mergedData[key] = merged;
+                        }
+                        // For other fields, replace if provided
+                        else if (data[key] !== undefined && data[key] !== null) {
+                            mergedData[key] = data[key];
+                        }
+                    });
+                    
+                    // Handle customSections - merge intelligently
+                    if (data.customSections && Array.isArray(data.customSections)) {
+                        const existingSections = mergedData.customSections || [];
+                        const newSections = data.customSections;
+                        
+                        // For each new section, check if it exists (by id or title match)
+                        newSections.forEach((newSection: any) => {
+                            if (newSection.id) {
+                                const existing = existingSections.find((s: any) => s.id === newSection.id);
+                                if (existing) {
+                                    // Update existing section
+                                    Object.assign(existing, newSection);
+                                } else {
+                                    // New section with ID - add it
+                                    customSectionsToAdd.push(newSection);
+                                }
+                            } else {
+                                // New section without ID - create it
+                                const sectionWithId = {
+                                    ...newSection,
+                                    id: `custom-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                    order: (existingSections.length + customSectionsToAdd.length) * 10
+                                };
+                                customSectionsToAdd.push(sectionWithId);
+                            }
+                        });
+                        
+                        if (customSectionsToAdd.length > 0) {
+                            mergedData.customSections = [...existingSections, ...customSectionsToAdd];
+                        }
+                    }
+                }
+                
                 updateWorld(worldToUpdate.id, {
-                    ...data,
+                    ...mergedData,
                     updatedAt: new Date()
                 });
                 // Update linked entity name if it changed
@@ -1098,15 +1884,21 @@ What would you like to create today?`,
                 // Create new world and auto-link
                 const id = Date.now().toString();
                 const name = data.name || 'New World';
-                addWorld({
+                
+                // Ensure required fields
+                const worldData = {
                     id,
                     name,
-                    genre: 'General',
-                    tone: 'Neutral',
+                    genre: data.genre || 'General',
+                    description: data.description || data.overviewProse || '',
+                    tone: typeof data.tone === 'string' ? data.tone : 'Neutral',
+                    progress: data.progress || 0,
                     ...data,
                     updatedAt: new Date(),
                     createdAt: new Date()
-                });
+                };
+                
+                addWorld(worldData);
                 // Auto-link to newly created world
                 console.log('Auto-linking to new world:', id, name);
                 const newEntity = { type: 'world' as const, id, name };
@@ -1152,34 +1944,7 @@ What would you like to create today?`,
                     if (activeSessionId) updateChatSession(activeSessionId, { relatedId: projectToUpdate.id });
                 }
 
-                // RECORD HISTORY
-                if (activeSessionId) {
-                    const changes: Record<string, { old: any; new: any }> = {};
-                    Object.keys(data).forEach(key => {
-                        if (key === 'id' || key === 'updatedAt' || key === 'createdAt') return;
-                        if (JSON.stringify(data[key]) !== JSON.stringify((projectToUpdate as any)[key])) {
-                            changes[key] = { old: (projectToUpdate as any)[key], new: data[key] };
-                        }
-                    });
-
-                    if (Object.keys(changes).length > 0) {
-                        const historyItem: AppliedUpdate = {
-                            id: Date.now().toString(),
-                            messageId: messageId || 'manual',
-                            timestamp: new Date(),
-                            type: 'project',
-                            targetId: projectToUpdate.id,
-                            targetName: projectToUpdate.name,
-                            changes
-                        };
-                        const session = chatSessions.find(s => s.id === activeSessionId);
-                        updateChatSession(activeSessionId, {
-                            updateHistory: [historyItem, ...(session?.updateHistory || [])]
-                        });
-                    }
-                }
-
-                // RECORD HISTORY
+                // RECORD HISTORY (removed duplicate)
                 if (activeSessionId) {
                     const changes: Record<string, { old: any; new: any }> = {};
                     Object.keys(data).forEach(key => {
@@ -1298,19 +2063,41 @@ What would you like to create today?`,
 
     const renderMessage = (message: Message) => {
         const content = message.content;
-        const saveData = parseSaveData(content);
+        const saveBlock = parseSaveBlock(content);
+        // Remove save block from display content (handle both formats)
+        const saveBlockRegex = /(?:```)?json:save:(character|world|project)(?::(\w+))?\s*\n([\s\S]*?)(?:\n```|$)/i;
+        const saveData = saveBlock ? { 
+            type: saveBlock.type, 
+            data: saveBlock.data, 
+            targetSection: saveBlock.targetSection, 
+            cleanContent: content.replace(saveBlockRegex, '').trim() 
+        } : null;
         const displayContent = saveData ? saveData.cleanContent : content;
 
         const lines = displayContent.split('\n');
         const isApplied = appliedUpdates.has(message.id);
 
-        // Get original data for diff
+        // Get original data for diff - use linkedEntity first, then targetIdParam
         let originalData = null;
         if (saveData) {
             if (saveData.type === 'character') {
-                originalData = characters.find(c => c.id === targetIdParam) || null;
-            } else {
-                originalData = worlds.find(w => w.id === targetIdParam) || null;
+                originalData = linkedEntity?.type === 'character' 
+                    ? characters.find(c => c.id === linkedEntity.id)
+                    : targetIdParam 
+                        ? characters.find(c => c.id === targetIdParam)
+                        : null;
+            } else if (saveData.type === 'world') {
+                originalData = linkedEntity?.type === 'world'
+                    ? worlds.find(w => w.id === linkedEntity.id)
+                    : targetIdParam
+                        ? worlds.find(w => w.id === targetIdParam)
+                        : null;
+            } else if (saveData.type === 'project') {
+                originalData = linkedEntity?.type === 'project'
+                    ? projects.find(p => p.id === linkedEntity.id)
+                    : targetIdParam
+                        ? projects.find(p => p.id === targetIdParam)
+                        : null;
             }
         }
 
@@ -1349,17 +2136,27 @@ What would you like to create today?`,
                 })}
 
                 {saveData && !isApplied && (
-                    <PendingUpdateCard
-                        type={saveData.type}
-                        data={saveData.data}
-                        originalData={originalData}
-                        onConfirm={() => handleSaveEntity(saveData.type, saveData.data, message.id)}
-                        onCancel={() => {
-                            // If we had a reject handler to just hide the card, we could use it.
-                            // For now, let's just mark it as applied (ignored) or add a specific state 'rejected'
-                            setAppliedUpdates(prev => new Set(prev).add(message.id));
-                        }}
-                    />
+                    <>
+                        <PendingUpdateCard
+                            type={saveData.type}
+                            data={saveData.data}
+                            originalData={originalData}
+                            onConfirm={() => {
+                                // Show manual save modal for field selection
+                                setManualSaveData({
+                                    type: saveData.type,
+                                    data: saveData.data,
+                                    originalData: originalData || undefined
+                                });
+                                setShowManualSaveModal(true);
+                            }}
+                            onCancel={() => {
+                                // If we had a reject handler to just hide the card, we could use it.
+                                // For now, let's just mark it as applied (ignored) or add a specific state 'rejected'
+                                setAppliedUpdates(prev => new Set(prev).add(message.id));
+                            }}
+                        />
+                    </>
                 )}
 
                 {saveData && isApplied && (
@@ -1469,127 +2266,14 @@ What would you like to create today?`,
                     </DropdownMenu>
                 </div>
                 <div className="flex items-center gap-2">
-                    {/* Entity Linking Dropdown */}
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className={cn(
-                                    "gap-2 text-xs",
-                                    linkedEntity
-                                        ? "text-violet-400 hover:text-violet-300 hover:bg-violet-500/10"
-                                        : "text-muted-foreground hover:text-foreground"
-                                )}
-                            >
-                                {linkedEntity ? (
-                                    <>
-                                        <Link2 className="h-3.5 w-3.5" />
-                                        <span className="hidden md:inline max-w-[100px] truncate">{linkedEntity.name}</span>
-                                        <span className="hidden md:inline text-[10px] opacity-60">
-                                            ({linkedEntity.type === 'character' ? 'ðŸ‘¤' : 'ðŸŒ'})
-                                        </span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Unlink className="h-3.5 w-3.5" />
-                                        <span className="hidden md:inline">Link Entity</span>
-                                    </>
-                                )}
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-56 bg-black/90 border-white/10 backdrop-blur-xl max-h-80 overflow-y-auto">
-                            {linkedEntity && (
-                                <>
-                                    <DropdownMenuItem
-                                        onClick={() => handleSetLinkedEntity(null)}
-                                        className="text-xs cursor-pointer focus:bg-red-500/10 focus:text-red-400 text-red-400"
-                                    >
-                                        <Unlink className="mr-2 h-3.5 w-3.5" />
-                                        Unlink "{linkedEntity.name}"
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator className="bg-white/10" />
-                                </>
-                            )}
-                            {characters.length > 0 && (
-                                <>
-                                    <div className="px-2 py-1.5 text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
-                                        Characters
-                                    </div>
-                                    {characters.map(char => (
-                                        <DropdownMenuItem
-                                            key={char.id}
-                                            onClick={() => handleSetLinkedEntity({ type: 'character', id: char.id, name: char.name })}
-                                            className={cn(
-                                                "text-xs cursor-pointer",
-                                                linkedEntity?.id === char.id
-                                                    ? "bg-violet-500/10 text-violet-400"
-                                                    : "focus:bg-white/10 focus:text-white"
-                                            )}
-                                        >
-                                            <User className="mr-2 h-3.5 w-3.5 text-emerald-400" />
-                                            <span className="truncate">{char.name}</span>
-                                            {linkedEntity?.id === char.id && <Check className="ml-auto h-3.5 w-3.5" />}
-                                        </DropdownMenuItem>
-                                    ))}
-                                </>
-                            )}
-                            {worlds.length > 0 && (
-                                <>
-                                    {characters.length > 0 && <DropdownMenuSeparator className="bg-white/10" />}
-                                    <div className="px-2 py-1.5 text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
-                                        Worlds
-                                    </div>
-                                    {worlds.map(world => (
-                                        <DropdownMenuItem
-                                            key={world.id}
-                                            onClick={() => handleSetLinkedEntity({ type: 'world', id: world.id, name: world.name })}
-                                            className={cn(
-                                                "text-xs cursor-pointer",
-                                                linkedEntity?.id === world.id
-                                                    ? "bg-violet-500/10 text-violet-400"
-                                                    : "focus:bg-white/10 focus:text-white"
-                                            )}
-                                        >
-                                            <Globe className="mr-2 h-3.5 w-3.5 text-blue-400" />
-                                            <span className="truncate">{world.name}</span>
-                                            {linkedEntity?.id === world.id && <Check className="ml-auto h-3.5 w-3.5" />}
-                                        </DropdownMenuItem>
-                                    ))}
-
-                                    {projects.length > 0 && (
-                                        <>
-                                            <DropdownMenuSeparator className="bg-white/10" />
-                                            <div className="px-2 py-1.5 text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
-                                                Projects_
-                                            </div>
-                                            {projects.map(project => (
-                                                <DropdownMenuItem
-                                                    key={project.id}
-                                                    onClick={() => handleSetLinkedEntity({ type: 'project', id: project.id, name: project.name })}
-                                                    className={cn(
-                                                        "text-xs cursor-pointer",
-                                                        linkedEntity?.id === project.id
-                                                            ? "bg-cyan-500/10 text-cyan-400"
-                                                            : "focus:bg-white/10 focus:text-white"
-                                                    )}
-                                                >
-                                                    <Folder className="mr-2 h-3.5 w-3.5 text-orange-400" />
-                                                    <span className="truncate">{project.name}</span>
-                                                    {linkedEntity?.id === project.id && <Check className="ml-auto h-3.5 w-3.5" />}
-                                                </DropdownMenuItem>
-                                            ))}
-                                        </>
-                                    )}
-                                </>
-                            )}
-                            {characters.length === 0 && worlds.length === 0 && (
-                                <div className="px-2 py-3 text-xs text-muted-foreground italic text-center">
-                                    No entities yet. Create one to link!
-                                </div>
-                            )}
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                    {/* Entity Linking with Fuzzy Search */}
+                    <EntityLinker
+                        linkedEntity={linkedEntity}
+                        onLink={handleSetLinkedEntity}
+                        characters={characters.map(c => ({ id: c.id, name: c.name }))}
+                        worlds={worlds.map(w => ({ id: w.id, name: w.name }))}
+                        projects={projects.map(p => ({ id: p.id, name: p.name }))}
+                    />
                     <div className="h-4 w-px bg-border" />
                     <Button
                         variant="ghost"
@@ -1601,6 +2285,27 @@ What would you like to create today?`,
                         <Save className="h-4 w-4" />
                         <span className="text-xs hidden md:inline">Save</span>
                     </Button>
+                    {/* Save as Document button for script/roleplay/chat_with modes */}
+                    {(mode === 'script' || mode === 'scene' || mode === 'chat_with') && linkedEntity?.type === 'character' && activeSessionId && (
+                        <>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-violet-400 hover:text-violet-300 hover:bg-violet-500/10 gap-2"
+                                onClick={() => {
+                                    const session = chatSessions.find(s => s.id === activeSessionId);
+                                    if (session && linkedEntity) {
+                                        setShowSaveDocumentOptionModal(true);
+                                    }
+                                }}
+                                title="Save as Document"
+                            >
+                                <FileText className="h-4 w-4" />
+                                <span className="text-xs hidden md:inline">Save Doc</span>
+                            </Button>
+                            <div className="h-4 w-px bg-border mx-1" />
+                        </>
+                    )}
                     <div className="h-4 w-px bg-border mx-1" />
                     <Button
                         variant="ghost"
@@ -1878,22 +2583,32 @@ What would you like to create today?`,
                         </div>
 
                         {/* Generate Options Toggle */}
-                        <button
-                            type="button"
-                            onClick={() => setShowGenerateOptions(!showGenerateOptions)}
-                            className={cn(
-                                "flex flex-col items-center justify-center gap-0.5 min-w-[3.5rem] px-1 rounded-xl transition-all border border-transparent h-[50px]",
-                                showGenerateOptions
-                                    ? "bg-violet-500/10 text-violet-400 border-violet-500/20"
-                                    : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
-                            )}
-                            title="Toggle AI Options Generation"
-                        >
-                            <div className={cn("w-8 h-4 rounded-full border relative transition-colors", showGenerateOptions ? "bg-violet-500 border-violet-500" : "bg-transparent border-muted-foreground")}>
-                                <div className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all", showGenerateOptions ? "left-[18px]" : "left-0.5")} />
-                            </div>
-                            <span className="text-[9px] font-medium">Options</span>
-                        </button>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowGenerateOptions(!showGenerateOptions)}
+                                    className={cn(
+                                        "flex flex-col items-center justify-center gap-0.5 min-w-[3.5rem] px-1 rounded-xl transition-all border border-transparent h-[50px]",
+                                        showGenerateOptions
+                                            ? "bg-violet-500/10 text-violet-400 border-violet-500/20"
+                                            : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                                    )}
+                                >
+                                    <div className={cn("w-8 h-4 rounded-full border relative transition-colors", showGenerateOptions ? "bg-violet-500 border-violet-500" : "bg-transparent border-muted-foreground")}>
+                                        <div className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all", showGenerateOptions ? "left-[18px]" : "left-0.5")} />
+                                    </div>
+                                    <span className="text-[9px] font-medium">Options</span>
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="bg-black/90 border-white/10 text-white max-w-xs">
+                                <p className="text-xs">
+                                    {showGenerateOptions 
+                                        ? "AI will provide interactive choice options after each response. Click to disable."
+                                        : "Enable AI to automatically generate interactive choice options after each response, making conversations more engaging and easier to navigate."}
+                                </p>
+                            </TooltipContent>
+                        </Tooltip>
 
                         <button type="submit" disabled={isLoading || !input.trim() || !hasApiKey} className={cn("premium-button flex items-center justify-center translate-y-0 h-[50px] w-[50px]", "disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none")}>
                             <Send className="h-5 w-5" />
@@ -1932,6 +2647,394 @@ What would you like to create today?`,
                 onClose={() => setShowHistorySidebar(false)}
                 history={activeSessionId ? chatSessions.find(s => s.id === activeSessionId)?.updateHistory || [] : []}
             />
+
+            {/* Session Setup Modal */}
+            {sessionSetupMode && (
+                <SessionSetupModal
+                    isOpen={showSessionSetup}
+                    onClose={() => {
+                        setShowSessionSetup(false);
+                        setSessionSetupMode(null);
+                        // Navigate back if user cancels
+                        window.history.back();
+                    }}
+                    onStart={async (config) => {
+                        setSessionSetupConfig(config);
+                        setShowSessionSetup(false);
+                        
+                        // Build context message with selected characters and worlds
+                        const selectedChars = config.selectedCharacters
+                            .map(id => characters.find(c => c.id === id))
+                            .filter(Boolean) as Array<{ id: string; name: string }>;
+                        const selectedWorlds = config.selectedWorlds
+                            .map(id => worlds.find(w => w.id === id))
+                            .filter(Boolean) as Array<{ id: string; name: string }>;
+                        
+                        // Link first character if available
+                        if (selectedChars.length > 0) {
+                            setLinkedEntity({
+                                type: 'character',
+                                id: selectedChars[0].id,
+                                name: selectedChars[0].name
+                            });
+                        }
+                        
+                        // Handle chat_with mode differently - set up persona
+                        if (sessionSetupMode === 'chat_with' && selectedChars.length > 0) {
+                            const char = characters.find(c => c.id === selectedChars[0].id);
+                            if (char) {
+                                // Set Persona Context with FULL character data
+                                const persona = `
+                                [SYSTEM: ACT AS CHARACTER - YOU ARE ${char.name.toUpperCase()}]
+                                You are now embodying the character "${char.name}". You ARE this character, not an AI assistant.
+                                
+                                CRITICAL: Use the FULL CHARACTER DATA provided below to inform every response. Stay in character at all times.
+                                
+                                CHARACTER SUMMARY:
+                                - Name: ${char.name}
+                                - Role: ${char.role || 'Not specified'}
+                                - Archetype: ${char.archetype || 'Not specified'}
+                                - Core Concept: ${char.coreConcept || 'Not specified'}
+                                - Motivations: ${char.motivations?.join(', ') || 'Not specified'}
+                                - Flaws: ${char.flaws?.join(', ') || 'Not specified'}
+                                
+                                FULL CHARACTER DATA (use this for authentic responses):
+                                ${JSON.stringify(char, null, 2)}
+                                
+                                INSTRUCTIONS:
+                                - Speak as ${char.name} would speak - use their voice, vocabulary, and speech patterns
+                                - Reflect their personality, background, and worldview in every response
+                                - Use their backstory, relationships, and motivations to inform your reactions
+                                - Stay true to their flaws, fears, and desires
+                                - The user is talking to you directly as ${char.name}
+                                - Do NOT break character or acknowledge you're an AI unless explicitly asked
+                                - Respond naturally and authentically as the character
+                                `;
+
+                                setActivePersona(persona);
+
+                                // Set initial character introduction message
+                                setMessages([{
+                                    id: 'intro',
+                                    role: 'assistant',
+                                    content: `*${char.name} looks at you.* \n\n"Hello. What brings you to me?"`,
+                                    choices: [
+                                        { id: 'talk', label: '💬 Talk Directly', description: 'Interview the character' },
+                                        { id: 'scene', label: '🎬 Generate Scene', description: 'Put them in a situation' }
+                                    ]
+                                }]);
+                                return;
+                            }
+                        }
+                        
+                        // Build the initial prompt to start the roleplay/script
+                        let startPrompt = '';
+                        if (sessionSetupMode === 'script') {
+                            if (showGenerateOptions) {
+                                // When options are enabled, ask questions first
+                                startPrompt = 'I want to create a script. Please ask me questions about the script details first (genre, conflict, key scenes, etc.) before generating it.';
+                            } else {
+                                // When options are disabled, generate immediately
+                                startPrompt = 'Start creating the script';
+                                if (config.sceneType) {
+                                    startPrompt += ` with a ${config.sceneType} scene`;
+                                }
+                                if (selectedChars.length > 0) {
+                                    startPrompt += ` featuring ${selectedChars.map(c => c.name).join(', ')}`;
+                                }
+                                if (config.tone) {
+                                    startPrompt += ` in a ${config.tone} tone`;
+                                }
+                                if (config.length) {
+                                    startPrompt += ` (${config.length} length)`;
+                                }
+                                startPrompt += '.';
+                            }
+                        } else {
+                            // Roleplay mode
+                            startPrompt = 'Begin the roleplay';
+                            if (selectedChars.length > 0) {
+                                startPrompt += ` with ${selectedChars.map(c => c.name).join(', ')}`;
+                            }
+                            if (config.sceneType) {
+                                startPrompt += ` in a ${config.sceneType} scenario`;
+                            }
+                            if (config.tone) {
+                                startPrompt += ` with a ${config.tone} tone`;
+                            }
+                            if (config.length) {
+                                startPrompt += ` (${config.length} length)`;
+                            }
+                            startPrompt += '. Start the scene and let me interact with the characters.';
+                        }
+                        
+                        // Set a welcome message first
+                        let contextMessage = '';
+                        if (sessionSetupMode === 'script') {
+                            contextMessage = `📝 **Script Creation Setup Complete**\n\n`;
+                            if (config.generateRandomCharacters) {
+                                contextMessage += `• Generating random characters\n`;
+                            } else if (selectedChars.length > 0) {
+                                contextMessage += `• Characters: ${selectedChars.map(c => c.name).join(', ')}\n`;
+                            }
+                            if (config.generateRandomWorlds) {
+                                contextMessage += `• Generating random world\n`;
+                            } else if (selectedWorlds.length > 0) {
+                                contextMessage += `• Worlds: ${selectedWorlds.map(w => w.name).join(', ')}\n`;
+                            }
+                            if (config.sceneType) contextMessage += `• Scene Type: ${config.sceneType}\n`;
+                            if (config.tone) contextMessage += `• Tone: ${config.tone}\n`;
+                            if (config.length) contextMessage += `• Length: ${config.length}\n`;
+                        } else {
+                            contextMessage = `✨ **Roleplay Setup Complete**\n\n`;
+                            if (config.generateRandomCharacters) {
+                                contextMessage += `• Generating random characters\n`;
+                            } else if (selectedChars.length > 0) {
+                                contextMessage += `• Characters: ${selectedChars.map(c => c.name).join(', ')}\n`;
+                            }
+                            if (config.generateRandomWorlds) {
+                                contextMessage += `• Generating random world\n`;
+                            } else if (selectedWorlds.length > 0) {
+                                contextMessage += `• Worlds: ${selectedWorlds.map(w => w.name).join(', ')}\n`;
+                            }
+                            if (config.sceneType) contextMessage += `• Scene Type: ${config.sceneType}\n`;
+                            if (config.tone) contextMessage += `• Tone: ${config.tone}\n`;
+                            if (config.length) contextMessage += `• Length: ${config.length}\n`;
+                        }
+                        
+                        setMessages([{
+                            id: 'setup-complete',
+                            role: 'assistant',
+                            content: contextMessage,
+                            choices: []
+                        }]);
+                        
+                        // Automatically send the start message after a brief delay
+                        setTimeout(() => {
+                            sendMessage(startPrompt);
+                        }, 300);
+                    }}
+                    mode={sessionSetupMode}
+                    characters={characters.map(c => ({ id: c.id, name: c.name }))}
+                    worlds={worlds.map(w => ({ id: w.id, name: w.name }))}
+                    initialCharacterId={linkedEntity?.type === 'character' ? linkedEntity.id : undefined}
+                    initialWorldId={linkedEntity?.type === 'world' ? linkedEntity.id : undefined}
+                />
+            )}
+
+            {/* Manual Save Modal */}
+            {manualSaveData && (
+                <ManualSaveModal
+                    isOpen={showManualSaveModal}
+                    onClose={() => {
+                        setShowManualSaveModal(false);
+                        setManualSaveData(null);
+                    }}
+                    type={manualSaveData.type}
+                    data={manualSaveData.data}
+                    originalData={manualSaveData.originalData}
+                    onSave={(selectedFields) => {
+                        // Filter data to only include selected fields
+                        const filteredData: any = {};
+                        selectedFields.forEach(field => {
+                            filteredData[field] = manualSaveData.data[field];
+                        });
+                        
+                        // Find the message ID for history tracking
+                        const messageId = messages.find(m => 
+                            m.pendingUpdate?.type === manualSaveData.type &&
+                            JSON.stringify(m.pendingUpdate?.data) === JSON.stringify(manualSaveData.data)
+                        )?.id;
+                        
+                        // Save with filtered data
+                        handleSaveEntity(manualSaveData.type, filteredData, messageId);
+                        
+                        // Close modal
+                        setShowManualSaveModal(false);
+                        setManualSaveData(null);
+                    }}
+                />
+            )}
+
+            {/* Save Document Option Modal */}
+            {showSaveDocumentOptionModal && activeSessionId && linkedEntity?.type === 'character' && (() => {
+                const session = chatSessions.find(s => s.id === activeSessionId);
+                if (!session) return null;
+                
+                const docType = mode === 'script' ? 'script' : 'roleplay';
+                const character = characters.find(c => c.id === linkedEntity.id);
+                
+                const handleExtractGeneratedContent = async () => {
+                    setIsExtractingContent(true);
+                    setShowSaveDocumentOptionModal(false);
+                    
+                    try {
+                        // Build extraction prompt
+                        const extractionPrompt = `You are extracting ${docType === 'script' ? 'script' : 'roleplay'} content from a chat conversation.
+
+CRITICAL INSTRUCTIONS:
+- Extract ONLY the actual ${docType === 'script' ? 'script content' : 'roleplay content'} generated by the AI
+- Remove all setup messages, metadata, user prompts asking for generation, and conversation overhead
+- Format the extracted content as a clean, professional ${docType === 'script' ? 'script' : 'roleplay'} document
+- ${docType === 'script' ? 'Maintain proper script format with character names, dialogue, and stage directions' : 'Maintain narrative flow and character interactions'}
+- Do NOT include messages like "Script Creation Setup Complete" or similar metadata
+- Do NOT include user messages that are just requests or setup
+- Focus on the actual ${docType === 'script' ? 'script' : 'roleplay'} content that was generated
+
+Here is the conversation:
+${session.messages.map((m, idx) => `### ${m.role === 'user' ? 'User' : 'Assistant'} (Message ${idx + 1})\n${m.content}`).join('\n\n')}
+
+Extract and format the ${docType === 'script' ? 'script' : 'roleplay'} content:`;
+
+                        const response = await fetch('/api/chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                messages: [
+                                    {
+                                        role: 'system',
+                                        content: `You are a content extraction assistant. Extract only the ${docType === 'script' ? 'script' : 'roleplay'} content from conversations, removing all setup, metadata, and non-content messages. Format it as a clean, professional document.`
+                                    },
+                                    {
+                                        role: 'user',
+                                        content: extractionPrompt
+                                    }
+                                ],
+                                provider: apiConfig?.provider || 'anthropic',
+                                apiKey: currentApiKey,
+                            }),
+                        });
+
+                        if (!response.ok) {
+                            throw new Error('Failed to extract content');
+                        }
+
+                        const reader = response.body?.getReader();
+                        const decoder = new TextDecoder();
+                        let extracted = '';
+
+                        if (reader) {
+                            while (true) {
+                                const { done, value } = await reader.read();
+                                if (done) break;
+                                extracted += decoder.decode(value, { stream: true });
+                            }
+                        }
+
+                        // Clean up the extracted content (remove any markdown code blocks if present)
+                        let cleanContent = extracted.trim();
+                        if (cleanContent.startsWith('```')) {
+                            const lines = cleanContent.split('\n');
+                            lines.shift(); // Remove first line (```markdown or similar)
+                            if (lines[lines.length - 1].trim() === '```') {
+                                lines.pop(); // Remove last line (```)
+                            }
+                            cleanContent = lines.join('\n').trim();
+                        }
+
+                        setExtractedContent(cleanContent);
+                        setSaveDocumentTitle(generateDocumentTitle(session, docType));
+                        setSaveDocumentContent(cleanContent);
+                        setShowSaveDocumentModal(true);
+                    } catch (error) {
+                        console.error('Failed to extract content:', error);
+                        setToast({
+                            message: 'Failed to extract content. Saving whole chat instead.',
+                            type: 'warning'
+                        });
+                        setTimeout(() => setToast(null), 3000);
+                        // Fallback to whole chat
+                        const defaultTitle = generateDocumentTitle(session, docType);
+                        const defaultContent = sessionToDocumentContent(session, docType);
+                        setSaveDocumentTitle(defaultTitle);
+                        setSaveDocumentContent(defaultContent);
+                        setShowSaveDocumentModal(true);
+                    } finally {
+                        setIsExtractingContent(false);
+                    }
+                };
+
+                const handleCloseOptionModal = () => {
+                    setShowSaveDocumentOptionModal(false);
+                };
+
+                const handleSelectOption = async (option: 'whole' | 'generated') => {
+                    if (option === 'whole') {
+                        const defaultTitle = generateDocumentTitle(session, docType);
+                        const defaultContent = sessionToDocumentContent(session, docType);
+                        setSaveDocumentTitle(defaultTitle);
+                        setSaveDocumentContent(defaultContent);
+                        setShowSaveDocumentOptionModal(false);
+                        setShowSaveDocumentModal(true);
+                    } else {
+                        await handleExtractGeneratedContent();
+                    }
+                };
+
+                return (
+                    <SaveDocumentOptionModal
+                        isOpen={showSaveDocumentOptionModal}
+                        onClose={handleCloseOptionModal}
+                        onSelectOption={handleSelectOption}
+                        documentType={docType}
+                        characterName={character?.name || linkedEntity.name}
+                        session={session}
+                        isProcessing={isExtractingContent}
+                    />
+                );
+            })()}
+
+            {/* Save Document Modal */}
+            {showSaveDocumentModal && activeSessionId && linkedEntity?.type === 'character' && (() => {
+                const session = chatSessions.find(s => s.id === activeSessionId);
+                if (!session) return null;
+                
+                const docType = mode === 'script' ? 'script' : 'roleplay';
+                const character = characters.find(c => c.id === linkedEntity.id);
+                
+                return (
+                    <SaveDocumentModal
+                        isOpen={showSaveDocumentModal}
+                        onClose={() => {
+                            setShowSaveDocumentModal(false);
+                            setExtractedContent(null);
+                            setSaveDocumentTitle('');
+                            setSaveDocumentContent('');
+                        }}
+                        onSave={(doc) => {
+                            // Check if document already exists for this session
+                            const existingDocs = characterDocuments.filter(d => 
+                                d.metadata?.sessionId === activeSessionId
+                            );
+                            
+                            if (existingDocs.length > 0) {
+                                // Update existing document
+                                updateCharacterDocument(existingDocs[0].id, doc);
+                                setToast({
+                                    message: `Document "${doc.title}" updated!`,
+                                    type: 'success'
+                                });
+                            } else {
+                                // Create new document
+                                addCharacterDocument(doc);
+                                setToast({
+                                    message: `Document "${doc.title}" saved!`,
+                                    type: 'success'
+                                });
+                            }
+                            setTimeout(() => setToast(null), 3000);
+                            setExtractedContent(null);
+                            setSaveDocumentTitle('');
+                            setSaveDocumentContent('');
+                        }}
+                        defaultTitle={saveDocumentTitle}
+                        defaultContent={saveDocumentContent}
+                        documentType={docType}
+                        characterId={linkedEntity.id}
+                        characterName={character?.name || linkedEntity.name}
+                    />
+                );
+            })()}
         </div >
     );
 }

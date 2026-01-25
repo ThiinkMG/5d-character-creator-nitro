@@ -79,23 +79,34 @@ export function EditableList({
 
                 {/* Current items */}
                 <div className="flex flex-wrap gap-2">
-                    {editItems.map((item, index) => (
-                        <span
-                            key={index}
-                            className={cn(
-                                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm",
-                                colorClass
-                            )}
-                        >
-                            {item}
-                            <button
-                                onClick={() => handleRemoveItem(index)}
-                                className="p-0.5 rounded hover:bg-white/10 transition-colors"
+                    {editItems.map((item, index) => {
+                        // Safety: ensure item is always a string
+                        let displayItem: string;
+                        if (typeof item === 'string') {
+                            displayItem = item;
+                        } else if (item && typeof item === 'object' && item !== null) {
+                            displayItem = (item as any).name || (item as any).description || JSON.stringify(item);
+                        } else {
+                            displayItem = String(item || '');
+                        }
+                        return (
+                            <span
+                                key={index}
+                                className={cn(
+                                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm",
+                                    colorClass
+                                )}
                             >
-                                <X className="w-3 h-3" />
-                            </button>
-                        </span>
-                    ))}
+                                {displayItem}
+                                <button
+                                    onClick={() => handleRemoveItem(index)}
+                                    className="p-0.5 rounded hover:bg-white/10 transition-colors"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
+                            </span>
+                        );
+                    })}
                 </div>
 
                 {/* Add new item */}
@@ -153,17 +164,28 @@ export function EditableList({
             <div className="flex items-start gap-2">
                 <div className="flex-1 flex flex-wrap gap-2 min-h-[2rem]">
                     {items.length > 0 ? (
-                        items.map((item, index) => (
-                            <span
-                                key={index}
-                                className={cn(
-                                    "px-3 py-1.5 rounded-lg text-sm",
-                                    colorClass
-                                )}
-                            >
-                                {item}
-                            </span>
-                        ))
+                        items.map((item, index) => {
+                            // Safety: ensure item is always a string
+                            let displayItem: string;
+                            if (typeof item === 'string') {
+                                displayItem = item;
+                            } else if (item && typeof item === 'object' && item !== null) {
+                                displayItem = (item as any).name || (item as any).description || JSON.stringify(item);
+                            } else {
+                                displayItem = String(item || '');
+                            }
+                            return (
+                                <span
+                                    key={index}
+                                    className={cn(
+                                        "px-3 py-1.5 rounded-lg text-sm",
+                                        colorClass
+                                    )}
+                                >
+                                    {displayItem}
+                                </span>
+                            );
+                        })
                     ) : (
                         <span className="text-white/30 italic text-sm py-1.5">No items defined</span>
                     )}

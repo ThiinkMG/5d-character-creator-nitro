@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Pencil, Sparkles, Check, X } from 'lucide-react';
+import { MentionInput } from './mention-input';
 
 interface InlineEditableTextProps {
     value: string;
@@ -65,32 +66,41 @@ export function InlineEditableText({
     };
 
     if (isEditing) {
-        const sharedProps = {
-            ref: inputRef as any,
-            value: localValue,
-            onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setLocalValue(e.target.value),
-            onBlur: handleBlur,
-            onKeyDown: handleKeyDown,
-            placeholder,
-            className: cn(
-                "w-full bg-transparent border-none outline-none resize-none",
-                "focus:ring-1 focus:ring-primary/30 rounded-md px-2 py-1 -mx-2 -my-1",
-                "text-inherit font-inherit leading-inherit",
-                className
-            )
-        };
-
         if (multiline) {
             return (
-                <textarea
-                    {...sharedProps}
-                    rows={Math.max(3, localValue.split('\n').length)}
-                    style={{ minHeight: '80px' }}
+                <MentionInput
+                    value={localValue}
+                    onChange={setLocalValue}
+                    onBlur={handleBlur}
+                    onKeyDown={handleKeyDown}
+                    placeholder={placeholder}
+                    className={cn(
+                        "w-full bg-transparent border-none outline-none resize-none",
+                        "focus:ring-1 focus:ring-primary/30 rounded-md px-2 py-1 -mx-2 -my-1",
+                        "text-inherit font-inherit leading-inherit",
+                        className
+                    )}
+                    multiline
+                    minRows={Math.max(3, localValue.split('\n').length)}
                 />
             );
         }
 
-        return <input type="text" {...sharedProps} />;
+        return (
+            <MentionInput
+                value={localValue}
+                onChange={setLocalValue}
+                onBlur={handleBlur}
+                onKeyDown={handleKeyDown}
+                placeholder={placeholder}
+                className={cn(
+                    "w-full bg-transparent border-none outline-none resize-none",
+                    "focus:ring-1 focus:ring-primary/30 rounded-md px-2 py-1 -mx-2 -my-1",
+                    "text-inherit font-inherit leading-inherit",
+                    className
+                )}
+            />
+        );
     }
 
     const displayValue = value || placeholder;

@@ -28,10 +28,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Project } from '@/types/project';
+import { EntityContextNav } from '@/components/navigation/EntityContextNav';
 
-export default function ProjectProfilePage() {
+export default function ProjectProfilePage({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
+    React.use(paramsPromise);
     const params = useParams();
     const router = useRouter();
     const [decodedId, setDecodedId] = useState<string>('');
@@ -113,6 +115,7 @@ export default function ProjectProfilePage() {
 
     return (
         <>
+            <EntityContextNav entityId={project.id} type="project" />
             <div className="min-h-screen p-8 lg:p-12 pb-32">
                 {/* Navigation */}
                 <div className="mb-8 flex items-center justify-between">

@@ -15,7 +15,9 @@ import {
     Sparkles,
     Folder,
     PanelLeftClose,
-    PanelLeftOpen
+    PanelLeftOpen,
+    Trash2,
+    Image as ImageIcon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/lib/store';
@@ -33,7 +35,9 @@ const navItems: NavItem[] = [
     { label: 'Characters', href: '/characters', icon: <Users className="h-5 w-5" /> },
     { label: 'Worlds', href: '/worlds', icon: <Globe className="h-5 w-5" /> },
     { label: 'Projects', href: '/projects', icon: <Folder className="h-5 w-5" /> },
+    { label: 'Media', href: '/media', icon: <ImageIcon className="h-5 w-5" /> },
     { label: 'Analysis', href: '/analysis', icon: <BarChart3 className="h-5 w-5" /> },
+    { label: 'Trash', href: '/trash', icon: <Trash2 className="h-5 w-5" /> },
 ];
 
 export function Sidebar() {

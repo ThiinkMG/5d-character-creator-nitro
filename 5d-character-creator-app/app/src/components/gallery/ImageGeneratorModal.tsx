@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Wand2, Globe, Sparkles, ExternalLink, Info, X, Upload, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -17,6 +18,13 @@ interface ImageGeneratorModalProps {
 
 export function ImageGeneratorModal({ isOpen, onClose, onGenerate, onUpload, itemName, initialMode = 'generate' }: ImageGeneratorModalProps) {
     const [mode, setMode] = useState<'generate' | 'upload'>(initialMode);
+    const [mounted, setMounted] = useState(false);
+
+    // Handle mounting for portal
+    React.useEffect(() => {
+        setMounted(true);
+        return () => setMounted(false);
+    }, []);
 
     // Reset/Sync mode when isOpen or initialMode changes
     React.useEffect(() => {
@@ -107,8 +115,8 @@ export function ImageGeneratorModal({ isOpen, onClose, onGenerate, onUpload, ite
 
     if (!isOpen) return null;
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+    const modalContent = (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
             {/* Backdrop */}
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
 
@@ -330,4 +338,8 @@ export function ImageGeneratorModal({ isOpen, onClose, onGenerate, onUpload, ite
             </div>
         </div>
     );
+
+    return typeof window !== 'undefined' && document.body
+        ? createPortal(modalContent, document.body)
+        : modalContent;
 }
