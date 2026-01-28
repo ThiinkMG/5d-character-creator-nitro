@@ -31,10 +31,14 @@ export interface Character {
     phase: 'Foundation' | 'Personality' | 'Backstory' | 'Relationships' | 'Arc';
     // Phase 1: Foundation
     coreConcept?: string;
+    motivation?: string;         // Single motivation string (used for stubs)
     archetype?: string;
     // Phase 2: Personality
     motivations?: string[];
     flaws?: string[];
+    internalConflict?: string;   // Internal character conflict
+    externalConflict?: string;   // External character conflict
+    characterArc?: string;       // Character arc summary
     // Phase 3: Backstory
     origin?: string;
     ghost?: string; // Past trauma
