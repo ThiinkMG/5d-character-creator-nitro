@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { ImagePicker } from '@/components/ui/image-picker';
 import { ImageGeneratorModal } from '@/components/gallery/ImageGeneratorModal';
+import { type ImageProvider } from '@/types/image-config';
 
 interface UserProfile {
     name: string;
@@ -88,7 +89,7 @@ export default function ProfilePage() {
         }
     };
 
-    const handleGenerateAvatar = async (prompt: string, provider: string) => {
+    const handleGenerateAvatar = async (prompt: string, provider: ImageProvider): Promise<string | null> => {
         try {
             const savedConfig = typeof window !== 'undefined'
                 ? JSON.parse(localStorage.getItem('5d-api-config') || '{}')
@@ -111,14 +112,17 @@ export default function ProfilePage() {
             const data = await response.json();
 
             if (response.ok && data.imageUrl) {
-                handleAvatarChange(data.imageUrl);
+                const imageUrl: string = data.imageUrl;
+                handleAvatarChange(imageUrl);
                 setShowImageGenerator(false);
+                return imageUrl;
             } else {
                 throw new Error(data.error || 'Failed to generate image');
             }
         } catch (error) {
             console.error('Avatar generation error:', error);
             alert('Failed to generate avatar. Please try again.');
+            return null;
         }
     };
 
