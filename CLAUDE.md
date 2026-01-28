@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 5D Character Creator is an AI-augmented narrative engine for writers and world-builders. It transforms character creation from form-filling to inline brainstorming with @ mentions, entity stubs, and context-aware AI assistance.
 
-**Current Phase**: Phase 1 Complete (@ Mention System, Entity Stubs, Enhanced Schema). Week 3-4 (Context Sidecar, Context Injection) in progress.
+**Current Phase**: Phase 1 Complete (@ Mention System, Entity Stubs, Context Sidecar, Context Injection).
 
 ## Build & Run Commands
 
@@ -98,6 +98,7 @@ Project uses specialized agents in `.claude/agents/`:
 - **context-engineer**: AI context management
 - **integration-specialist**: API routes, third-party
 - **test-engineer**: Testing & QA
+- **deployment-verifier**: Pre-push build validation, Netlify readiness
 
 Session reports tracked in `Session_Reports/[Month]/`.
 
@@ -106,8 +107,8 @@ Session reports tracked in `Session_Reports/[Month]/`.
 | Phase | Focus | Status |
 |-------|-------|--------|
 | Week 1-2 | @ Mentions, Entity Stubs, Schema | Complete |
-| Week 3 | Context Sidecar (pinnable sidebar) | In Progress |
-| Week 4 | Just-in-Time Context Injection | Planned |
+| Week 3 | Context Sidecar (pinnable sidebar) | Complete |
+| Week 4 | Just-in-Time Context Injection | Complete |
 | Phase 2+ | Continuity Checker, Voice Match, Relationship Graph | Future |
 
 ## Key Files for Common Tasks
@@ -129,3 +130,34 @@ Configured in `tsconfig.json`:
 ## Deployment
 
 Netlify deployment configured in `netlify.toml`. Base directory: `5d-character-creator-app/app`.
+
+### Pre-Push Verification
+
+A deployment verification agent runs automatically before pushing to GitHub via the pre-push hook. This ensures:
+- Build compiles successfully
+- No ESLint errors
+- Tests pass
+- No sensitive files staged
+- No large files outside Git LFS
+
+To run verification manually:
+```bash
+cd 5d-character-creator-app/app
+npm run verify:deploy
+
+# Or directly:
+./scripts/verify-deployment.sh
+```
+
+To skip verification (not recommended):
+```bash
+git push --no-verify
+```
+
+### Deployment Verifier Agent
+
+Located in `.claude/agents/deployment-verifier/AGENT.md`. Use this agent for:
+- Pre-deployment checks
+- Build validation
+- Security scanning
+- Netlify configuration verification
