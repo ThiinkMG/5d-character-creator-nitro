@@ -444,10 +444,10 @@ export async function POST(req: Request) {
                 model = openai('gpt-4o');
             } else {
                 const anthropic = createAnthropic({ apiKey: finalApiKey });
-                // Using Claude 3.5 Haiku latest - provides better compatibility with @ai-sdk/anthropic v3.0.7+
-                // The -latest alias automatically resolves to the currently supported version
-                model = anthropic('claude-3-5-haiku-latest');
-                console.log('[Anthropic] Using model: claude-3-5-haiku-latest');
+                // Using Claude 3.5 Haiku - current version as of October 2024
+                // Model identifier: claude-3-5-haiku-20241022
+                model = anthropic('claude-3-5-haiku-20241022');
+                console.log('[Anthropic] Using model: claude-3-5-haiku-20241022');
             }
         } catch (sdkError) {
             console.error('AI SDK initialization error:', sdkError);
@@ -465,7 +465,7 @@ export async function POST(req: Request) {
 
         // Prepare System Prompt with Context Budget System
         // Determine model being used for token budget calculation
-        const modelId = provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-latest';
+        const modelId = provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022';
         const tokenBudget = getRecommendedBudget(modelId);
 
         // Build context sections with priority-based composition
@@ -514,7 +514,7 @@ export async function POST(req: Request) {
         // DEBUG: Non-streaming generation with enhanced logging
         console.log('[Chat API] Starting text generation:', {
             provider,
-            modelId: provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-latest',
+            modelId: provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022',
             messagesCount: coreMessages.length,
             isAdminMode,
             hasApiKey: !!finalApiKey,
@@ -577,7 +577,7 @@ export async function POST(req: Request) {
                     provider,
                     isAdminMode,
                     errorMessage: errorMsg,
-                    modelId: provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-latest'
+                    modelId: provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022'
                 });
                 
                 return new Response(
@@ -656,7 +656,7 @@ export async function POST(req: Request) {
                     provider,
                     isAdminMode,
                     errorMessage: error.message,
-                    modelId: provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-latest'
+                    modelId: provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022'
                 });
             } else if (errorLower.includes('429') || errorLower.includes('rate limit')) {
                 errorMessage = 'Rate limit exceeded. Please try again later.';
