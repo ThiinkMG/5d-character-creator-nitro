@@ -357,11 +357,7 @@ SUMMARY: ${r.item.summary}
             query,
             method: useSemantic ? 'semantic' : 'keyword',
             results: topResults.map(r => ({
-                item: {
-                    id: r.item.id,
-                    title: r.item.title,
-                    type: r.item.type,
-                },
+                item: r.item,
                 score: r.score,
                 matchType: r.matchType,
             })),
