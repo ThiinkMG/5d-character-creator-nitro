@@ -713,6 +713,7 @@ export const useStore = create<GlobalState>()(
                     name,
                     aliases: [],
                     genre: '',
+                    progress: 0,
                     description: '[Auto-created from @mention. Flesh out later.]',
                     rules: [],
                     keyLocations: [],
