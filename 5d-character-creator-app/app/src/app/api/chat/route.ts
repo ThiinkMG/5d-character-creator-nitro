@@ -344,6 +344,15 @@ export async function POST(req: Request) {
         // Determine which API key to use
         let finalApiKey = apiKey;
         
+        // Enhanced debug logging
+        console.log('[Chat API] Request details:', {
+            provider,
+            isAdminMode,
+            hasApiKey: !!apiKey,
+            apiKeyLength: apiKey ? apiKey.length : 0,
+            adminModeActive: isAdminMode
+        });
+        
         // If admin mode is active, use environment variables (server-side keys)
         if (isAdminMode) {
             const adminKey = provider === 'openai' 
@@ -352,7 +361,11 @@ export async function POST(req: Request) {
             
             if (adminKey && adminKey.trim().length > 0) {
                 finalApiKey = adminKey;
-                console.log('[Admin Mode] Using server-side API key from environment variables');
+                console.log('[Admin Mode] Using server-side API key from environment variables', {
+                    provider,
+                    keyLength: adminKey.length,
+                    keyPrefix: adminKey.substring(0, 8) + '...'
+                });
             } else {
                 const missingEnvVar = provider === 'openai' 
                     ? 'OPENAI_API_KEY' 
@@ -394,9 +407,10 @@ export async function POST(req: Request) {
                 model = openai('gpt-4o');
             } else {
                 const anthropic = createAnthropic({ apiKey: finalApiKey });
-                // Using Haiku as default - it's more reliable and cost-effective
-                // You can change this to 'claude-3-5-sonnet-20241022' if you have access
-                model = anthropic('claude-3-haiku-20240307');
+                // Using Claude 3.5 Haiku latest - provides better compatibility with @ai-sdk/anthropic v3.0.7+
+                // The -latest alias automatically resolves to the currently supported version
+                model = anthropic('claude-3-5-haiku-latest');
+                console.log('[Anthropic] Using model: claude-3-5-haiku-latest');
             }
         } catch (sdkError) {
             console.error('AI SDK initialization error:', sdkError);
@@ -414,7 +428,7 @@ export async function POST(req: Request) {
 
         // Prepare System Prompt with Context Budget System
         // Determine model being used for token budget calculation
-        const modelId = provider === 'openai' ? 'gpt-4o' : 'claude-3-haiku-20240307';
+        const modelId = provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-latest';
         const tokenBudget = getRecommendedBudget(modelId);
 
         // Build context sections with priority-based composition
@@ -460,10 +474,15 @@ export async function POST(req: Request) {
         return result.toTextStreamResponse();
         */
 
-        // DEBUG: Non-streaming generation
-        console.log('Generating text (non-stream)...');
-        console.log('Provider:', provider);
-        console.log('Messages count:', coreMessages.length);
+        // DEBUG: Non-streaming generation with enhanced logging
+        console.log('[Chat API] Starting text generation:', {
+            provider,
+            modelId: provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-latest',
+            messagesCount: coreMessages.length,
+            isAdminMode,
+            hasApiKey: !!finalApiKey,
+            tokenBudget
+        });
         
         let text;
         try {
@@ -504,11 +523,25 @@ export async function POST(req: Request) {
                 );
             }
             
-            // Check for "Not Found" errors (often means invalid API key or model not found)
+            // Check for "Not Found" errors (often means invalid API key, model not found, or API endpoint issues)
             if (errorLower.includes('not found') || errorLower.includes('404') || errorLower.includes('model not found')) {
+                // Enhanced error message with actionable guidance
+                const possibleCauses = [
+                    `Your ${keyName} API key may lack permissions to access the requested model`,
+                    `The AI service endpoint may be temporarily unavailable`,
+                    `There may be a configuration issue with your API key or account`
+                ].join(', ');
+                
                 const errorMessage = isAdminMode
-                    ? `API key or model not found. The ${envVarName} environment variable may be invalid, or the model may not be available. Please verify your ${keyName} API key in Netlify project settings.`
-                    : `API key or model not found. Please verify your ${keyName} API key is correct in Settings.`;
+                    ? `API key or model not found (404). ${possibleCauses}. Please verify your ${envVarName} environment variable in Netlify project settings. If the issue persists, check your Anthropic account status and API key permissions.`
+                    : `API key or model not found (404). ${possibleCauses}. Please verify your ${keyName} API key is correct in Settings and has the necessary permissions.`;
+                
+                console.error('[Chat API] 404 Not Found error:', {
+                    provider,
+                    isAdminMode,
+                    errorMessage: errorMsg,
+                    modelId: provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-latest'
+                });
                 
                 return new Response(
                     JSON.stringify({ 
@@ -571,10 +604,23 @@ export async function POST(req: Request) {
                     : `Invalid ${keyName} API key. Please check your ${keyName} API key in Settings.`;
                 statusCode = 401;
             } else if (errorLower.includes('not found') || errorLower.includes('404') || errorLower.includes('model not found')) {
+                const possibleCauses = [
+                    `Your ${keyName} API key may lack permissions to access the requested model`,
+                    `The AI service endpoint may be temporarily unavailable`,
+                    `There may be a configuration issue with your API key or account`
+                ].join(', ');
+                
                 errorMessage = isAdminMode
-                    ? `API key or model not found. The ${envVarName} environment variable may be invalid, or the model may not be available. Please verify your ${keyName} API key in Netlify project settings.`
-                    : `API key or model not found. Please verify your ${keyName} API key is correct in Settings.`;
+                    ? `API key or model not found (404). ${possibleCauses}. Please verify your ${envVarName} environment variable in Netlify project settings. If the issue persists, check your Anthropic account status and API key permissions.`
+                    : `API key or model not found (404). ${possibleCauses}. Please verify your ${keyName} API key is correct in Settings and has the necessary permissions.`;
                 statusCode = 404;
+                
+                console.error('[Chat API] 404 Not Found error (outer catch):', {
+                    provider,
+                    isAdminMode,
+                    errorMessage: error.message,
+                    modelId: provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-latest'
+                });
             } else if (errorLower.includes('429') || errorLower.includes('rate limit')) {
                 errorMessage = 'Rate limit exceeded. Please try again later.';
                 statusCode = 429;
