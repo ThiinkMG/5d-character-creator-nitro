@@ -14,6 +14,8 @@ export interface World {
     // Core Elements
     tone?: string;
     rules?: string[]; // Magic/Tech rules
+    keyLocations?: string[];      // Key locations in the world
+    culturalElements?: string[];  // Cultural elements and traditions
 
     // Lore Sections
     history?: string;
