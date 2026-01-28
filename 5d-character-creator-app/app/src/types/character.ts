@@ -23,6 +23,7 @@ export interface Character {
     id: string; // CID like #ELARA_902
     name: string;
     aliases?: string[];              // NEW: Alternate names for fuzzy matching in @ mentions
+    tags?: string[];                 // NEW: Entity tags for categorization (e.g., 'stub', 'needs-development')
     role: string; // Protagonist, Antagonist, etc.
     genre: string;
     projectId?: string; // Link to Project

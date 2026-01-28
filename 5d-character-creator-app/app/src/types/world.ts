@@ -5,6 +5,7 @@ export interface World {
     id: string; // WID like @VIRELITH_501
     name: string;
     aliases?: string[];              // NEW: Alternate names for fuzzy matching in @ mentions
+    tags?: string[];                 // NEW: Entity tags for categorization (e.g., 'stub', 'needs-development')
     genre: string;
     description: string;
     projectId?: string; // Link to Project
