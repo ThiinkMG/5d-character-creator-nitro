@@ -383,7 +383,12 @@ export async function POST(req: Request) {
             }
         }
 
-        if (!finalApiKey || finalApiKey.trim().length === 0) {
+        // Trim and validate API key
+        if (finalApiKey) {
+            finalApiKey = finalApiKey.trim();
+        }
+        
+        if (!finalApiKey || finalApiKey.length === 0) {
             // Determine which environment variable is missing based on provider
             const missingEnvVar = provider === 'openai' 
                 ? 'OPENAI_API_KEY' 
@@ -391,7 +396,14 @@ export async function POST(req: Request) {
             
             const errorMessage = isAdminMode 
                 ? `Admin mode is active but ${missingEnvVar} is not configured in environment variables. Please add ${missingEnvVar} in your Netlify project settings (Site settings > Environment variables). After adding the variable, redeploy your site for the changes to take effect.`
-                : 'API key is required. Please add your API key in Settings.';
+                : `API key is required. Please add your ${provider === 'openai' ? 'OpenAI' : 'Anthropic'} API key in Settings.`;
+            
+            console.error('[Chat API] Missing API key:', {
+                provider,
+                isAdminMode,
+                receivedApiKey: !!apiKey,
+                receivedApiKeyLength: apiKey ? apiKey.length : 0
+            });
             
             return new Response(
                 JSON.stringify({ 
@@ -405,6 +417,23 @@ export async function POST(req: Request) {
                     } 
                 }
             );
+        }
+        
+        // Validate API key format
+        if (provider === 'anthropic' && !finalApiKey.startsWith('sk-ant-')) {
+            console.warn('[Chat API] Anthropic API key format warning:', {
+                keyPrefix: finalApiKey.substring(0, 10),
+                keyLength: finalApiKey.length
+            });
+            // Don't reject - some keys might have different formats, let the API handle validation
+        }
+        
+        if (provider === 'openai' && !finalApiKey.startsWith('sk-')) {
+            console.warn('[Chat API] OpenAI API key format warning:', {
+                keyPrefix: finalApiKey.substring(0, 10),
+                keyLength: finalApiKey.length
+            });
+            // Don't reject - let the API handle validation
         }
 
         // Select the model based on provider

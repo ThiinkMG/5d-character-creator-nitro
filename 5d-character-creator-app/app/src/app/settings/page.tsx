@@ -232,9 +232,21 @@ export default function SettingsPage() {
     };
 
     const handleSave = () => {
-        localStorage.setItem('5d-api-config', JSON.stringify(config));
+        // Trim API keys before saving to remove any accidental whitespace
+        const cleanedConfig = {
+            ...config,
+            anthropicKey: config.anthropicKey.trim(),
+            openaiKey: config.openaiKey.trim(),
+            geminiKey: config.geminiKey.trim(),
+            dalleKey: config.dalleKey.trim(),
+        };
+        
+        localStorage.setItem('5d-api-config', JSON.stringify(cleanedConfig));
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
+        
+        // Update local state to reflect trimmed values
+        setConfig(cleanedConfig);
     };
 
     const handleTest = async () => {

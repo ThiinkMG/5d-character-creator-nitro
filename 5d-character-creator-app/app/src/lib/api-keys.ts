@@ -56,7 +56,27 @@ export function getApiKeys(): ApiKeys {
  */
 export function getChatApiKey(provider: 'anthropic' | 'openai' = 'anthropic'): string {
     const keys = getApiKeys();
-    return provider === 'openai' ? (keys.openaiKey || '') : (keys.anthropicKey || '');
+    const key = provider === 'openai' ? (keys.openaiKey || '') : (keys.anthropicKey || '');
+    
+    // Debug logging to help diagnose API key issues
+    if (typeof window !== 'undefined') {
+        const isAdminMode = localStorage.getItem('5d-admin-mode') === 'true';
+        console.log('[getChatApiKey]', {
+            provider,
+            isAdminMode,
+            hasKey: !!key,
+            keyLength: key ? key.length : 0,
+            keyPrefix: key ? key.substring(0, 8) + '...' : 'none',
+            allKeys: {
+                hasAnthropic: !!keys.anthropicKey,
+                hasOpenai: !!keys.openaiKey,
+                anthropicLength: keys.anthropicKey ? keys.anthropicKey.length : 0,
+                openaiLength: keys.openaiKey ? keys.openaiKey.length : 0
+            }
+        });
+    }
+    
+    return key;
 }
 
 /**
