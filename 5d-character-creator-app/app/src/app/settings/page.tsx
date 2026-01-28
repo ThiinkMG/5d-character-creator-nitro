@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Key, Eye, EyeOff, Check, AlertCircle, Sparkles, Cpu, Image as ImageIcon, Wand2, Globe, Lock, LogOut, X } from 'lucide-react';
+import { Key, Eye, EyeOff, Check, AlertCircle, Sparkles, Cpu, Image as ImageIcon, Wand2, Globe, Lock, LogOut, X, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -231,6 +231,14 @@ export default function SettingsPage() {
         }
     };
 
+    const handleHardRefresh = () => {
+        // Hard refresh: clear cache and reload page
+        if (typeof window !== 'undefined') {
+            // Clear browser cache by reloading with cache bypass
+            window.location.reload();
+        }
+    };
+
     const handleSave = () => {
         // Trim API keys before saving to remove any accidental whitespace
         const cleanedConfig = {
@@ -376,6 +384,15 @@ export default function SettingsPage() {
                         <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
                     </div>
                     <div className="flex items-center gap-3">
+                        <Button
+                            onClick={handleHardRefresh}
+                            variant="outline"
+                            className="glass"
+                            title="Hard refresh (reload page)"
+                        >
+                            <RefreshCw className="h-4 w-4 mr-2" />
+                            Refresh
+                        </Button>
                         {isAdminMode ? (
                             <Button
                                 onClick={handleAdminLogout}
