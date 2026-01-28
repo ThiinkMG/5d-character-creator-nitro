@@ -1,6 +1,28 @@
+// NEW: Voice Profile interface for voice consistency
+export interface VoiceProfile {
+    sampleDialogue: string[];        // 3-5 representative lines
+    speechPatterns: string[];        // e.g., "uses rhetorical questions", "speaks in fragments"
+    vocabularyLevel: 'simple' | 'moderate' | 'complex' | 'archaic';
+    tone: string;                    // e.g., "sardonic", "earnest", "formal"
+    dialect?: string;                // Optional regional/cultural dialect
+    catchphrases?: string[];         // Signature phrases
+    avoids?: string[];               // Words/phrases they'd never say
+}
+
+// NEW: Canonical Fact interface for continuity checking
+export interface CanonicalFact {
+    id: string;
+    category: 'physical' | 'personality' | 'history' | 'relationship' | 'ability' | 'possession' | 'other';
+    fact: string;
+    establishedIn: string;           // Scene/chapter/session reference
+    establishedAt: Date;
+    confidence: 'definite' | 'implied' | 'tentative';
+}
+
 export interface Character {
     id: string; // CID like #ELARA_902
     name: string;
+    aliases?: string[];              // NEW: Alternate names for fuzzy matching in @ mentions
     role: string; // Protagonist, Antagonist, etc.
     genre: string;
     projectId?: string; // Link to Project
@@ -51,6 +73,12 @@ export interface Character {
     tagline?: string;
     fears?: string[];
     timeline?: { year: string; event: string }[];
+
+    // NEW: Voice Profile for voice consistency (Phase 1)
+    voiceProfile?: VoiceProfile;
+
+    // NEW: Canonical Facts for continuity checking (Phase 1)
+    canonicalFacts?: CanonicalFact[];
 
     // NEW: Related items linking
     worldId?: string;  // Link to associated world

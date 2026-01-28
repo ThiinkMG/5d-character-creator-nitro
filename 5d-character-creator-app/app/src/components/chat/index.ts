@@ -10,3 +10,8 @@ export {
 } from './MultiEntityLinker';
 export { CharacterChatModeSelector } from './CharacterChatModeSelector';
 export { ProjectChatModeSelector } from './ProjectChatModeSelector';
+
+// Phase 1 Week 3: Context Sidecar exports
+export { ContextSidecar } from './ContextSidecar';
+export { EntityContextCard } from './EntityContextCard';
+export { MentionPopup } from './MentionPopup';

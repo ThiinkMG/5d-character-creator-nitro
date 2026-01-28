@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@/templates/*": ["../app-page-idea-templates/*"]
     }
   },
   "include": [

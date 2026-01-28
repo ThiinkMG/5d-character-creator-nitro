@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { createOpenAI } from '@ai-sdk/openai';
 // pdf-parse removed to prevent crashes on large files
 // import pdf from 'pdf-parse';
 
@@ -12,10 +13,115 @@ export interface KnowledgeItem {
     tags: string[];
     path: string;
     lastIndexed: string;
+    embedding?: number[]; // Vector embedding for semantic search
+}
+
+// Debug info for dev mode
+export interface RetrievalDebugInfo {
+    query: string;
+    method: 'keyword' | 'semantic' | 'hybrid';
+    results: Array<{
+        item: KnowledgeItem;
+        score: number;
+        matchType: 'title' | 'summary' | 'semantic';
+    }>;
+    embeddingGenerated: boolean;
+    fallbackToKeyword: boolean;
 }
 
 const KNOWLEDGE_DIR = path.join(process.cwd(), '../knowledge-bank');
 const INDEX_FILE = path.join(KNOWLEDGE_DIR, 'knowledge-index.json');
+const EMBEDDINGS_CACHE_FILE = path.join(KNOWLEDGE_DIR, '.embeddings-cache.json');
+
+// Cache for embeddings to avoid regenerating
+interface EmbeddingsCache {
+    [itemId: string]: {
+        embedding: number[];
+        generatedAt: string;
+    };
+}
+
+let embeddingsCache: EmbeddingsCache | null = null;
+
+function loadEmbeddingsCache(): EmbeddingsCache {
+    if (embeddingsCache) return embeddingsCache;
+    
+    try {
+        if (fs.existsSync(EMBEDDINGS_CACHE_FILE)) {
+            const data = fs.readFileSync(EMBEDDINGS_CACHE_FILE, 'utf-8');
+            embeddingsCache = JSON.parse(data);
+            return embeddingsCache || {};
+        }
+    } catch (e) {
+        console.error('Failed to load embeddings cache:', e);
+    }
+    embeddingsCache = {};
+    return {};
+}
+
+function saveEmbeddingsCache(cache: EmbeddingsCache) {
+    try {
+        fs.writeFileSync(EMBEDDINGS_CACHE_FILE, JSON.stringify(cache, null, 2));
+        embeddingsCache = cache;
+    } catch (e) {
+        console.error('Failed to save embeddings cache:', e);
+    }
+}
+
+/**
+ * Generate embedding for text using OpenAI
+ */
+async function generateEmbedding(text: string, apiKey?: string): Promise<number[]> {
+    if (!apiKey) {
+        throw new Error('OpenAI API key required for embeddings');
+    }
+
+    try {
+        const openai = createOpenAI({ apiKey });
+        // Using text-embedding-3-small for cost efficiency
+        const response = await fetch('https://api.openai.com/v1/embeddings', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: 'text-embedding-3-small',
+                input: text.slice(0, 8000), // Limit input length
+            }),
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(`OpenAI API error: ${error.error?.message || 'Unknown error'}`);
+        }
+
+        const data = await response.json();
+        return data.data[0].embedding;
+    } catch (error) {
+        console.error('Failed to generate embedding:', error);
+        throw error;
+    }
+}
+
+/**
+ * Calculate cosine similarity between two vectors
+ */
+function cosineSimilarity(a: number[], b: number[]): number {
+    if (a.length !== b.length) return 0;
+    
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    
+    for (let i = 0; i < a.length; i++) {
+        dotProduct += a[i] * b[i];
+        normA += a[i] * a[i];
+        normB += b[i] * b[i];
+    }
+    
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
 
 // Helper to determine title from filename
 const cleanTitle = (filename: string) => {
@@ -108,37 +214,159 @@ export async function refreshKnowledgeIndex(): Promise<KnowledgeItem[]> {
     return newIndex;
 }
 
-export async function retrieveContext(query: string): Promise<string> {
+/**
+ * Retrieve context with semantic search using vector embeddings
+ * Falls back to keyword matching if embeddings unavailable
+ */
+export async function retrieveContext(
+    query: string,
+    apiKey?: string,
+    debugInfo?: { method: 'keyword' | 'semantic' | 'hybrid'; results: any[]; embeddingGenerated: boolean; fallbackToKeyword: boolean }
+): Promise<{ context: string; debugInfo?: RetrievalDebugInfo }> {
     const index = await getKnowledgeIndex();
-    if (index.length === 0) return '';
+    if (index.length === 0) {
+        return { context: '', debugInfo: { query, method: 'keyword', results: [], embeddingGenerated: false, fallbackToKeyword: false } };
+    }
 
-    // Simple keyword matching for now (RAG v1)
-    // In a real production system, we'd use vector embeddings (Pinecone/pgvector) here.
     const lowerQuery = query.toLowerCase();
+    let queryEmbedding: number[] | null = null;
+    let useSemantic = false;
+    let embeddingGenerated = false;
+    let fallbackToKeyword = false;
 
-    // Score items
-    const scored = index.map(item => {
-        let score = 0;
-        if (lowerQuery.includes(item.title.toLowerCase())) score += 10;
-        if (item.summary.toLowerCase().includes(lowerQuery)) score += 5;
-        // Basic keywords
-        ['character', 'story', 'plot', 'theme', 'structure'].forEach(k => {
-            if (lowerQuery.includes(k) && item.summary.toLowerCase().includes(k)) score += 1;
-        });
-        return { item, score };
-    });
+    // Try semantic search if API key available
+    if (apiKey) {
+        try {
+            queryEmbedding = await generateEmbedding(query, apiKey);
+            embeddingGenerated = true;
+            useSemantic = true;
+        } catch (error) {
+            console.warn('[RAG] Failed to generate query embedding, falling back to keyword search:', error);
+            fallbackToKeyword = true;
+            useSemantic = false;
+        }
+    }
 
+    // Load embeddings cache and ensure items have embeddings
+    const cache = loadEmbeddingsCache();
+    const itemsWithEmbeddings: Array<KnowledgeItem & { embedding: number[] }> = [];
+
+    if (useSemantic && queryEmbedding) {
+        // Generate embeddings for items that don't have them cached
+        for (const item of index) {
+            let embedding = item.embedding;
+            
+            if (!embedding) {
+                const cached = cache[item.id];
+                if (cached) {
+                    embedding = cached.embedding;
+                    item.embedding = embedding;
+                } else if (apiKey) {
+                    try {
+                        // Generate embedding for the item's searchable text (title + summary)
+                        const searchableText = `${item.title}\n${item.summary}`;
+                        embedding = await generateEmbedding(searchableText, apiKey);
+                        
+                        // Cache it
+                        cache[item.id] = {
+                            embedding,
+                            generatedAt: new Date().toISOString(),
+                        };
+                        saveEmbeddingsCache(cache);
+                        item.embedding = embedding;
+                    } catch (error) {
+                        console.warn(`[RAG] Failed to generate embedding for ${item.id}, skipping semantic search for this item`);
+                        continue;
+                    }
+                }
+            }
+
+            if (embedding) {
+                itemsWithEmbeddings.push(item as KnowledgeItem & { embedding: number[] });
+            }
+        }
+    }
+
+    // Score items using semantic similarity or keyword matching
+    const scored: Array<{ item: KnowledgeItem; score: number; matchType: 'title' | 'summary' | 'semantic' }> = [];
+
+    if (useSemantic && queryEmbedding && itemsWithEmbeddings.length > 0) {
+        // Semantic search: calculate cosine similarity
+        for (const item of itemsWithEmbeddings) {
+            const similarity = cosineSimilarity(queryEmbedding, item.embedding);
+            scored.push({
+                item,
+                score: similarity,
+                matchType: 'semantic',
+            });
+        }
+    } else {
+        // Keyword matching fallback
+        for (const item of index) {
+            let score = 0;
+            let matchType: 'title' | 'summary' = 'summary';
+
+            if (lowerQuery.includes(item.title.toLowerCase())) {
+                score += 10;
+                matchType = 'title';
+            }
+            if (item.summary.toLowerCase().includes(lowerQuery)) {
+                score += 5;
+            }
+            // Basic keywords
+            ['character', 'story', 'plot', 'theme', 'structure', 'arc', 'protagonist', 'conflict'].forEach(k => {
+                if (lowerQuery.includes(k) && item.summary.toLowerCase().includes(k)) {
+                    score += 1;
+                }
+            });
+            
+            if (score > 0) {
+                scored.push({ item, score, matchType });
+            }
+        }
+    }
+
+    // Sort and get top results
     const topResults = scored
-        .filter(s => s.score > 0)
         .sort((a, b) => b.score - a.score)
         .slice(0, 3); // Top 3 relevant books
 
-    if (topResults.length === 0) return '';
+    if (topResults.length === 0) {
+        return {
+            context: '',
+            debugInfo: {
+                query,
+                method: useSemantic ? 'semantic' : 'keyword',
+                results: [],
+                embeddingGenerated,
+                fallbackToKeyword,
+            },
+        };
+    }
 
-    return topResults.map(r => `
+    const context = topResults.map(r => `
 ---
 SOURCE: ${r.item.title}
 SUMMARY: ${r.item.summary}
 ---
 `).join('\n');
+
+    return {
+        context,
+        debugInfo: {
+            query,
+            method: useSemantic ? 'semantic' : 'keyword',
+            results: topResults.map(r => ({
+                item: {
+                    id: r.item.id,
+                    title: r.item.title,
+                    type: r.item.type,
+                },
+                score: r.score,
+                matchType: r.matchType,
+            })),
+            embeddingGenerated,
+            fallbackToKeyword,
+        },
+    };
 }

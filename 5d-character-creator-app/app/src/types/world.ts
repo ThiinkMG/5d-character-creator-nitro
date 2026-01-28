@@ -1,6 +1,10 @@
+// Import CanonicalFact from character types
+import type { CanonicalFact } from './character';
+
 export interface World {
     id: string; // WID like @VIRELITH_501
     name: string;
+    aliases?: string[];              // NEW: Alternate names for fuzzy matching in @ mentions
     genre: string;
     description: string;
     projectId?: string; // Link to Project
@@ -45,6 +49,9 @@ export interface World {
     locations?: { name: string; description: string }[];
     magicSystem?: string;
     technology?: string;
+
+    // NEW: Canonical Facts for continuity checking (Phase 1)
+    canonicalFacts?: CanonicalFact[];
 
     // NEW: Linked characters
     characterIds?: string[];

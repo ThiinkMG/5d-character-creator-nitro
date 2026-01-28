@@ -17,7 +17,7 @@ export const CONTEXT_PRIORITIES = {
     LINKED_ENTITY: 80,     // Primary linked character/world/project
     SESSION_SETUP: 75,     // Session configuration and user preferences
     SECONDARY_ENTITY: 70,  // Secondary linked entities (multi-entity sessions)
-    RAG_KNOWLEDGE: 50,     // Retrieved knowledge bank content
+    RAG_KNOWLEDGE: 70,     // Retrieved knowledge bank content (increased priority)
     SESSION_SUMMARY: 30,   // AI-generated session summary
     CONVERSATION_HISTORY: 20, // Older conversation context
 } as const;

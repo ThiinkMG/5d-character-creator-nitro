@@ -7,6 +7,8 @@ import {
     getRecommendedBudget,
     CONTEXT_PRIORITIES
 } from '@/lib/context-budget';
+import { assembleContextForPrompt, type LinkedEntities } from '@/lib/contextInjection';
+import type { ChatMode } from '@/lib/mode-registry';
 
 // Allow streaming responses up to 60 seconds
 export const maxDuration = 60;
@@ -309,7 +311,11 @@ export async function POST(req: Request) {
             linkedWorld,
             linkedProject,
             modeInstruction,
-            sessionSetup
+            sessionSetup,
+            // NEW: Just-in-Time Context Injection parameters
+            chatMode,
+            linkedEntities, // { characters: [...], worlds: [...], projects: [...] }
+            useContextInjection = false, // Enable new context injection system
         } = body;
         
         // Assign to outer scope variables
@@ -333,14 +339,31 @@ export async function POST(req: Request) {
         // RAG: Retrieve context based on the last user message
         const lastMessage = messages[messages.length - 1];
         let ragContext = '';
+        let ragDebugInfo: any = null;
 
         // RAG retrieval with graceful error handling
         if (lastMessage && lastMessage.role === 'user') {
             try {
-                // Find relevant book summaries from knowledge bank
-                ragContext = await retrieveContext(lastMessage.content);
+                // Try to get OpenAI API key for embeddings (from admin mode or user config)
+                let embeddingApiKey: string | undefined;
+                if (isAdminMode) {
+                    embeddingApiKey = process.env.OPENAI_API_KEY;
+                } else {
+                    // Try to extract from request if available (for user's own key)
+                    // Note: We'll use admin key for embeddings in admin mode, user key otherwise
+                    embeddingApiKey = provider === 'openai' ? apiKey : undefined;
+                }
+
+                // Find relevant book summaries from knowledge bank (with semantic search if available)
+                const retrievalResult = await retrieveContext(lastMessage.content, embeddingApiKey);
+                ragContext = retrievalResult.context;
+                ragDebugInfo = retrievalResult.debugInfo;
+                
                 if (ragContext) {
-                    console.log('[RAG] Context injected:', ragContext.length, 'chars');
+                    console.log('[RAG] Context injected:', ragContext.length, 'chars', {
+                        method: ragDebugInfo?.method,
+                        resultsCount: ragDebugInfo?.results?.length || 0,
+                    });
                 }
             } catch (ragError) {
                 // Log but don't fail the request - RAG is optional enhancement
@@ -468,15 +491,61 @@ export async function POST(req: Request) {
         const modelId = provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022';
         const tokenBudget = getRecommendedBudget(modelId);
 
+        // NEW: Just-in-Time Context Injection (Week 4)
+        let injectedContext: string | undefined;
+        let contextInjectionDebug: any = null;
+
+        if (useContextInjection && chatMode && linkedEntities) {
+            try {
+                // Allocate 30% of token budget for entity context (rest for system prompt, RAG, etc.)
+                const entityContextBudget = Math.floor(tokenBudget * 0.3);
+
+                const assembledContext = assembleContextForPrompt(
+                    chatMode as ChatMode,
+                    linkedEntities as LinkedEntities,
+                    lastMessage?.content || '',
+                    entityContextBudget,
+                    isAdminMode // Include debug info if admin mode
+                );
+
+                injectedContext = assembledContext.contextString;
+
+                if (isAdminMode) {
+                    contextInjectionDebug = {
+                        mode: chatMode,
+                        tokenCount: assembledContext.tokenCount,
+                        budget: entityContextBudget,
+                        entitiesIncluded: assembledContext.entitiesIncluded,
+                        fieldsIncluded: assembledContext.fieldsIncluded,
+                        truncatedFields: assembledContext.truncatedFields,
+                    };
+                }
+
+                console.log('[Context Injection] Assembled context:', {
+                    mode: chatMode,
+                    tokenCount: assembledContext.tokenCount,
+                    budget: entityContextBudget,
+                    characters: assembledContext.entitiesIncluded.characters.length,
+                    worlds: assembledContext.entitiesIncluded.worlds.length,
+                    projects: assembledContext.entitiesIncluded.projects.length,
+                });
+            } catch (injectionError) {
+                console.warn('[Context Injection] Failed (non-fatal):', injectionError);
+                // Fall back to old system
+                injectedContext = undefined;
+            }
+        }
+
         // Build context sections with priority-based composition
         const contextSections = buildContextSections({
             systemPrompt: SYSTEM_PROMPT,
             ragContext: ragContext || undefined,
             // Use structured context if provided (improves token budget management)
             modeInstruction: modeInstruction || undefined,
-            linkedCharacter: linkedCharacter ? JSON.stringify(linkedCharacter, null, 2) : undefined,
-            linkedWorld: linkedWorld ? JSON.stringify(linkedWorld, null, 2) : undefined,
-            linkedProject: linkedProject ? JSON.stringify(linkedProject, null, 2) : undefined,
+            // Use injected context if available, otherwise fall back to old system
+            linkedCharacter: injectedContext || (linkedCharacter ? JSON.stringify(linkedCharacter, null, 2) : undefined),
+            linkedWorld: !injectedContext && linkedWorld ? JSON.stringify(linkedWorld, null, 2) : undefined,
+            linkedProject: !injectedContext && linkedProject ? JSON.stringify(linkedProject, null, 2) : undefined,
         });
 
         // Compose context within token budget (higher priority sections included first)
@@ -612,12 +681,34 @@ export async function POST(req: Request) {
             throw genError; // Re-throw to be caught by outer catch
         }
 
-        return new Response(text, {
-            headers: {
-                'Content-Type': 'text/plain',
-                ...corsHeaders
+        // Include debug info in response if admin mode is active
+        const responseData: any = { text };
+        if (isAdminMode) {
+            responseData.debug = {
+                rag: ragDebugInfo,
+                context: {
+                    totalTokens: composedContext.totalTokens,
+                    includedSections: composedContext.includedSections,
+                    truncatedSections: composedContext.truncatedSections,
+                    droppedSections: composedContext.droppedSections,
+                    tokenBudget,
+                    modelId,
+                },
+                contextInjection: contextInjectionDebug, // NEW: Week 4 context injection debug
+                provider,
+                modelId: provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022',
+            };
+        }
+
+        return new Response(
+            isAdminMode ? JSON.stringify(responseData) : text,
+            {
+                headers: {
+                    'Content-Type': isAdminMode ? 'application/json' : 'text/plain',
+                    ...corsHeaders
+                }
             }
-        });
+        );
     } catch (error: unknown) {
         console.error('Chat API Error:', error);
         console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');

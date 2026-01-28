@@ -1,6 +1,7 @@
 export interface Project {
     id: string; // SID like #STORY_101
     name: string;
+    aliases?: string[];              // NEW: Alternate names for fuzzy matching in @ mentions
     genre: string;
     summary: string;
     description?: string;

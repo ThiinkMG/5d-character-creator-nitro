@@ -15,6 +15,13 @@ interface TrashItem {
     deletedAt: Date;
 }
 
+// NEW: Development queue item for tracking stub entities
+interface DevelopmentQueueItem {
+    entityId: string;
+    entityType: 'character' | 'world' | 'project';
+    createdAt: Date;
+}
+
 interface GlobalState {
     characters: Character[];
     worlds: World[];
@@ -24,6 +31,7 @@ interface GlobalState {
     projectDocuments: ProjectDocument[];
     modePresets: ModePreset[];
     trash: TrashItem[];
+    developmentQueue: DevelopmentQueueItem[]; // NEW: Phase 1
 
     activeCharacterId: string | null;
     activeWorldId: string | null;
@@ -105,6 +113,17 @@ interface GlobalState {
     removeFromTrash: (id: string) => void;
     emptyTrash: () => void;
     cleanupOldTrash: () => void; // Remove items older than 30 days
+
+    // NEW: Phase 1 - Entity Stub Actions (@ Mention System)
+    createCharacterStub: (name: string) => string; // Returns character ID
+    createWorldStub: (name: string) => string; // Returns world ID
+    createProjectStub: (name: string) => string; // Returns project ID
+
+    // NEW: Phase 1 - Development Queue Actions
+    addToDevelopmentQueue: (entityId: string, entityType: 'character' | 'world' | 'project') => void;
+    removeFromDevelopmentQueue: (entityId: string) => void;
+    getDevelopmentQueue: () => DevelopmentQueueItem[];
+    isInDevelopmentQueue: (entityId: string) => boolean;
 }
 
 export const useStore = create<GlobalState>()(
@@ -118,6 +137,7 @@ export const useStore = create<GlobalState>()(
             projectDocuments: [],
             modePresets: [],
             trash: [],
+            developmentQueue: [], // Phase 1: @ Mention System
 
             activeCharacterId: null,
             activeWorldId: null,
@@ -650,6 +670,125 @@ export const useStore = create<GlobalState>()(
                         })
                     };
                 }),
+
+            // Phase 1: Entity Stub Creation (@ Mention System)
+            createCharacterStub: (name: string) => {
+                const id = `#${name.toUpperCase().replace(/\s+/g, '_')}_${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+                const now = new Date();
+                const character: Character = {
+                    id,
+                    name,
+                    aliases: [],
+                    role: 'supporting',
+                    genre: '',
+                    progress: 5,
+                    phase: 'Foundation',
+                    coreConcept: '[Auto-created from @mention. Flesh out later.]',
+                    motivation: '',
+                    internalConflict: '',
+                    externalConflict: '',
+                    characterArc: '',
+                    createdAt: now,
+                    updatedAt: now,
+                    tags: ['stub', 'needs-development']
+                };
+
+                set((state) => ({
+                    characters: [...state.characters, character],
+                    developmentQueue: [...state.developmentQueue, {
+                        entityId: id,
+                        entityType: 'character',
+                        createdAt: now
+                    }]
+                }));
+
+                return id;
+            },
+
+            createWorldStub: (name: string) => {
+                const id = `@${name.toUpperCase().replace(/\s+/g, '_')}_${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+                const now = new Date();
+                const world: World = {
+                    id,
+                    name,
+                    aliases: [],
+                    genre: '',
+                    description: '[Auto-created from @mention. Flesh out later.]',
+                    rules: [],
+                    keyLocations: [],
+                    culturalElements: [],
+                    history: '',
+                    characterIds: [],
+                    createdAt: now,
+                    updatedAt: now,
+                    tags: ['stub', 'needs-development']
+                };
+
+                set((state) => ({
+                    worlds: [...state.worlds, world],
+                    developmentQueue: [...state.developmentQueue, {
+                        entityId: id,
+                        entityType: 'world',
+                        createdAt: now
+                    }]
+                }));
+
+                return id;
+            },
+
+            createProjectStub: (name: string) => {
+                const id = `$${name.toUpperCase().replace(/\s+/g, '_')}_${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+                const now = new Date();
+                const project: Project = {
+                    id,
+                    name,
+                    aliases: [],
+                    genre: '',
+                    description: '[Auto-created from @mention. Flesh out later.]',
+                    characterIds: [],
+                    worldIds: [],
+                    createdAt: now,
+                    updatedAt: now,
+                    tags: ['stub', 'needs-development']
+                };
+
+                set((state) => ({
+                    projects: [...state.projects, project],
+                    developmentQueue: [...state.developmentQueue, {
+                        entityId: id,
+                        entityType: 'project',
+                        createdAt: now
+                    }]
+                }));
+
+                return id;
+            },
+
+            // Phase 1: Development Queue Management
+            addToDevelopmentQueue: (entityId, entityType) =>
+                set((state) => {
+                    // Check if already in queue
+                    if (state.developmentQueue.some(item => item.entityId === entityId)) {
+                        return state;
+                    }
+                    return {
+                        developmentQueue: [...state.developmentQueue, {
+                            entityId,
+                            entityType,
+                            createdAt: new Date()
+                        }]
+                    };
+                }),
+
+            removeFromDevelopmentQueue: (entityId) =>
+                set((state) => ({
+                    developmentQueue: state.developmentQueue.filter(item => item.entityId !== entityId)
+                })),
+
+            getDevelopmentQueue: () => get().developmentQueue,
+
+            isInDevelopmentQueue: (entityId) =>
+                get().developmentQueue.some(item => item.entityId === entityId),
         }),
         {
             name: '5d-storage',
@@ -662,6 +801,7 @@ export const useStore = create<GlobalState>()(
                 projectDocuments: state.projectDocuments,
                 modePresets: state.modePresets,
                 trash: state.trash,
+                developmentQueue: state.developmentQueue, // Phase 1
                 isSidebarCollapsed: state.isSidebarCollapsed
             }),
         }

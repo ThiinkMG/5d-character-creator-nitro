@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-import { Search, Send, Menu, Sparkles, User, Globe, Folder, FileText, ChevronRight, X, Command, RefreshCw, Trash2, MoreVertical, AlertCircle, Save, Settings, Copy, RotateCcw, Check, Link2, Unlink, GitFork } from 'lucide-react';
+import { Search, Send, Menu, Sparkles, User, Globe, Folder, FileText, ChevronRight, X, Command, RefreshCw, Trash2, MoreVertical, AlertCircle, Save, Settings, Copy, RotateCcw, Check, Link2, Unlink, GitFork, History, Bug } from 'lucide-react';
 import { EntityLinker } from '@/components/chat/EntityLinker';
 import { Button } from '@/components/ui/button';
 import {
@@ -34,10 +34,27 @@ import { SaveDocumentOptionModal } from '@/components/chat/SaveDocumentOptionMod
 import { SaveProjectDocumentModal } from '@/components/project/SaveProjectDocumentModal';
 import { ProjectDocumentType } from '@/types/document';
 import { fuzzyMatchByName, findBestMatch } from '@/lib/fuzzy-match';
+import { fuzzySearchEntities, type Entity } from '@/lib/fuzzySearch'; // Phase 1: @ Mention System
 import { UserNameSetupModal } from '@/components/profile/UserNameSetupModal';
 import { createDocumentFromSession, sessionToDocumentContent, generateDocumentTitle } from '@/lib/document-utils';
-import { History } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { DevModePanel, type DevModeLogEntry, type DevModeDebugInfo } from '@/components/chat/DevModePanel';
+import { LogSessionModal } from '@/components/chat/LogSessionModal';
+import { ContextSidecar } from '@/components/chat/ContextSidecar'; // Phase 1 Week 3: Context Sidecar System
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter
+} from "@/components/ui/dialog";
+
+// Helper function to check if a mode supports options
+function modeSupportsOptions(mode: string | null): boolean {
+    const optionsSupportedModes: ChatMode[] = ['character', 'world', 'project', 'workshop', 'script'];
+    return mode !== null && optionsSupportedModes.includes(mode as ChatMode);
+}
 
 // Parse choices from AI response
 function parseChoices(content: string): { cleanContent: string; choices: Choice[] } {
@@ -60,10 +77,12 @@ function parseChoices(content: string): { cleanContent: string; choices: Choice[
     
     if (optionsMatch) {
         const optionsStr = optionsMatch[2] || optionsMatch[3] || '';
-        // Split by | and clean up
-        const options = optionsStr.split('|').map(s => s.trim()).filter(s => s.length > 0);
+        // Split by | but preserve emojis - use a more careful split that doesn't break emoji sequences
+        // Split on | that's not part of an emoji or special character sequence
+        const options = optionsStr.split(/\s*\|\s*/).map(s => s.trim()).filter(s => s.length > 0);
         options.forEach((opt, idx) => {
-            // Remove any trailing punctuation that might have been included
+            // Remove any trailing punctuation that might have been included, but preserve emojis
+            // Use a regex that doesn't match emoji characters (which are typically in ranges like \u{1F300}-\u{1F9FF})
             const cleanOpt = opt.replace(/[.,;:!?]+$/, '').trim();
             if (cleanOpt) {
                 choices.push({
@@ -399,7 +418,11 @@ function ChatContent() {
         characterDocuments,
         addProjectDocument,
         updateProjectDocument,
-        projectDocuments
+        projectDocuments,
+        // Phase 1: @ Mention System - Stub creation actions
+        createCharacterStub,
+        createWorldStub,
+        createProjectStub
     } = useStore();
     const searchParams = useSearchParams();
     const mode = searchParams.get('mode');
@@ -422,16 +445,16 @@ function ChatContent() {
 I'm your AI partner for building deep, psychologically rich characters.
 
 **Quick Commands:**
-• \`/generate basic\` â€” Quick 5-7 question character
-• \`/generate advanced\` â€” Full 5-phase development
-• \`/worldbio\` â€” Create a world setting
-• \`/menu\` â€” See all commands
+• \`/generate basic\` — Quick 5-7 question character
+• \`/generate advanced\` — Full 5-phase development
+• \`/worldbio\` — Create a world setting
+• \`/menu\` — See all commands
 
 What would you like to create today?`,
             choices: [
                 { id: 'basic', label: '🎭 Create Character', description: 'Quick 5-7 questions' },
                 { id: 'world', label: '🌍 Build World', description: 'Create a setting' },
-                { id: 'menu', label: 'ðŸ“‹ See Commands', description: 'View all options' },
+                { id: 'menu', label: '📋 See Commands', description: 'View all options' },
             ],
         },
     ]);
@@ -446,6 +469,10 @@ What would you like to create today?`,
     const [showUserNameSetup, setShowUserNameSetup] = useState(false);
     const [userProfile, setUserProfile] = useState<{ name: string; avatar: string } | null>(null);
     const [showAvatarsInChat, setShowAvatarsInChat] = useState(true);
+    const [devModeOpen, setDevModeOpen] = useState(false);
+    const [devModeLogs, setDevModeLogs] = useState<DevModeLogEntry[]>([]);
+    const [devModeDebugInfo, setDevModeDebugInfo] = useState<DevModeDebugInfo | null>(null);
+    const [showLogSessionModal, setShowLogSessionModal] = useState(false);
 
     const [apiConfig, setApiConfig] = useState<{
         provider: string;
@@ -462,7 +489,9 @@ What would you like to create today?`,
     const autoStartRef = useRef(false);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const [appliedUpdates, setAppliedUpdates] = useState<Set<string>>(new Set());
-    const [showGenerateOptions, setShowGenerateOptions] = useState(true); // New state for options toggle - default enabled
+    const [showGenerateOptions, setShowGenerateOptions] = useState(false); // Context-aware - starts disabled
+    const [showOptionsEnableModal, setShowOptionsEnableModal] = useState(false);
+    const [pendingOptionsEnable, setPendingOptionsEnable] = useState(false);
 
     // Reload State
     const [showReloadModal, setShowReloadModal] = useState(false);
@@ -507,6 +536,16 @@ What would you like to create today?`,
     const [showSessionSetup, setShowSessionSetup] = useState(false);
     const [sessionSetupMode, setSessionSetupMode] = useState<'script' | 'scene' | 'chat_with' | null>(null);
     const [sessionSetupConfig, setSessionSetupConfig] = useState<SessionSetupConfig | null>(null);
+
+    // Phase 1 Week 3: Context Sidecar state
+    const [isContextSidecarOpen, setIsContextSidecarOpen] = useState(() => {
+        // Load persisted state from localStorage
+        if (typeof window !== 'undefined') {
+            const stored = localStorage.getItem('contextSidecar.isOpen');
+            return stored ? stored === 'true' : false;
+        }
+        return false;
+    });
 
     // Context Switch / Link Handler with fuzzy matching support
     const handleSetLinkedEntity = (entity: { type: 'character' | 'world' | 'project'; id: string; name: string } | null, query?: string) => {
@@ -608,12 +647,45 @@ What would you like to create today?`,
     }, []);
 
     // Get current API key using utility (checks admin keys first)
+    // Use state to avoid hydration mismatch - check after mount
+    const [hasApiKey, setHasApiKey] = useState(false);
+    const [mounted, setMounted] = useState(false);
+    
+    useEffect(() => {
+        setMounted(true);
+        const provider = (apiConfig?.provider === 'openai' || apiConfig?.provider === 'anthropic') ? apiConfig.provider : 'anthropic';
+        const currentApiKey = getChatApiKey(provider);
+        setHasApiKey(!!currentApiKey);
+    }, [apiConfig]);
+    
     const provider = (apiConfig?.provider === 'openai' || apiConfig?.provider === 'anthropic') ? apiConfig.provider : 'anthropic';
-    const currentApiKey = getChatApiKey(provider);
-    const hasApiKey = !!currentApiKey;
     
     // Note: hasAdminKeys state removed - we now check directly in render using getChatApiKey()
     // This ensures the status indicator always uses the latest values from localStorage
+
+    // Auto-enable options for supported modes (context-aware)
+    useEffect(() => {
+        if (modeSupportsOptions(mode)) {
+            // Check if user has explicitly disabled options for this mode
+            const disabledModes = localStorage.getItem('5d-options-disabled-modes');
+            if (disabledModes) {
+                try {
+                    const parsed = JSON.parse(disabledModes);
+                    if (parsed.includes(mode)) {
+                        setShowGenerateOptions(false);
+                        return;
+                    }
+                } catch (e) {
+                    // Invalid JSON, ignore
+                }
+            }
+            // Auto-enable for supported modes
+            setShowGenerateOptions(true);
+        } else {
+            // Disable for unsupported modes
+            setShowGenerateOptions(false);
+        }
+    }, [mode]);
 
     // Check if admin mode is active
     useEffect(() => {
@@ -632,6 +704,55 @@ What would you like to create today?`,
             };
         }
     }, []);
+
+    // Helper function to add dev mode logs
+    const addDevLog = (type: DevModeLogEntry['type'], message: string, data?: any) => {
+        if (!isAdminMode) return;
+        
+        const logEntry: DevModeLogEntry = {
+            id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+            timestamp: new Date(),
+            type,
+            message,
+            data,
+        };
+        setDevModeLogs(prev => [...prev, logEntry]);
+    };
+
+    const clearDevLogs = () => {
+        setDevModeLogs([]);
+        setDevModeDebugInfo(null);
+    };
+
+    // Phase 1 Week 3: Context Sidecar keyboard shortcut (Ctrl+Shift+C) and state persistence
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Ctrl+Shift+C to toggle context sidecar
+            if (e.ctrlKey && e.shiftKey && e.key === 'C') {
+                e.preventDefault();
+                setIsContextSidecarOpen(prev => {
+                    const newState = !prev;
+                    localStorage.setItem('contextSidecar.isOpen', String(newState));
+                    return newState;
+                });
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    // Phase 1 Week 3: Toggle context sidecar function
+    const handleToggleContextSidecar = () => {
+        setIsContextSidecarOpen(prev => {
+            const newState = !prev;
+            localStorage.setItem('contextSidecar.isOpen', String(newState));
+            return newState;
+        });
+    };
+
+    // Phase 1 Week 3: Get all chat text for entity detection
+    const chatText = messages.map(m => m.content).join(' ') + ' ' + input;
 
     // Restore Chat Session
     useEffect(() => {
@@ -805,6 +926,10 @@ Click **Generate** to create the document, or provide specific instructions for 
                     // Check if admin mode is active
                     const isAdminModeActive = typeof window !== 'undefined' && localStorage.getItem('5d-admin-mode') === 'true';
 
+                    // Get API key at call time
+                    const titleApiKey = getChatApiKey(provider);
+                    if (!titleApiKey) return; // Skip title generation if no key
+
                     const response = await fetch('/api/chat', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -814,7 +939,7 @@ Click **Generate** to create the document, or provide specific instructions for 
                                 { role: 'user', content: `Conversation:\n${context}` }
                             ],
                             provider: apiConfig?.provider || 'anthropic',
-                            apiKey: currentApiKey,
+                            apiKey: titleApiKey,
                             isAdminMode: isAdminModeActive, // Send admin mode flag to API route
                         }),
                     });
@@ -885,16 +1010,16 @@ Click **Generate** to create the document, or provide specific instructions for 
 I'm your AI partner for building deep, psychologically rich characters.
 
 **Quick Commands:**
-• \`/generate basic\` â€” Quick 5-7 question character
-• \`/generate advanced\` â€” Full 5-phase development
-• \`/worldbio\` â€” Create a world setting
-• \`/menu\` â€” See all commands
+• \`/generate basic\` — Quick 5-7 question character
+• \`/generate advanced\` — Full 5-phase development
+• \`/worldbio\` — Create a world setting
+• \`/menu\` — See all commands
 
 What would you like to create today?`,
                 choices: [
                     { id: 'basic', label: '🎭 Create Character', description: 'Quick 5-7 questions' },
                     { id: 'world', label: '🌍 Build World', description: 'Create a setting' },
-                    { id: 'menu', label: 'ðŸ“‹ See Commands', description: 'View all options' },
+                    { id: 'menu', label: '📋 See Commands', description: 'View all options' },
                 ],
             },
         ]);
@@ -954,16 +1079,40 @@ What would you like to create today?`,
         setMentionQuery(null);
     };
 
-    const handleMentionSelect = (item: { id: string; name: string; type: 'Character' | 'World' }) => {
+    // Phase 1: Handle mention selection with stub creation support
+    const handleMentionSelect = (item: { id: string; name: string; type: 'Character' | 'World' | 'Project'; isCreate?: boolean }) => {
         if (mentionQuery === null) return;
 
+        let entityName = item.name;
+        let entityId = item.id;
+
+        // Handle "Create new" option
+        if (item.isCreate) {
+            const createActions = {
+                Character: createCharacterStub,
+                World: createWorldStub,
+                Project: createProjectStub
+            };
+
+            const createAction = createActions[item.type];
+            if (createAction) {
+                // Create stub entity
+                entityId = createAction(item.name);
+                entityName = item.name;
+
+                // Show toast or notification (optional)
+                console.log(`Created new ${item.type} stub: ${entityName} (${entityId})`);
+            }
+        }
+
+        // Insert mention into text
         const textBeforeCursor = input.slice(0, cursorIndex);
         const textAfterCursor = input.slice(cursorIndex);
 
         const lastAt = textBeforeCursor.lastIndexOf('@');
         const prefix = textBeforeCursor.slice(0, lastAt);
 
-        const newValue = `${prefix}@${item.name} ${textAfterCursor}`;
+        const newValue = `${prefix}@${entityName} ${textAfterCursor}`;
         setInput(newValue);
         setMentionQuery(null);
 
@@ -973,19 +1122,59 @@ What would you like to create today?`,
         }
     };
 
+    // Phase 1: Enhanced @ Mention System with Fuzzy Search and Stub Creation
     const getFilteredMentions = () => {
         if (mentionQuery === null) return [];
-        const q = mentionQuery.toLowerCase();
 
-        const chars = characters
-            .filter(c => c.name.toLowerCase().includes(q))
-            .map(c => ({ ...c, type: 'Character' as const }));
+        // Combine all entities for fuzzy search
+        const allEntities: Entity[] = [...characters, ...worlds, ...projects];
 
-        const wrlds = worlds
-            .filter(w => w.name.toLowerCase().includes(q))
-            .map(w => ({ ...w, type: 'World' as const }));
+        // Use fuzzy search to find matches
+        const fuzzyMatches = fuzzySearchEntities(mentionQuery, allEntities, 5);
 
-        return [...chars, ...wrlds].slice(0, 5); // Limit to 5
+        // Map fuzzy matches to suggestion format
+        const existingMatches = fuzzyMatches.map(match => {
+            const entityType = match.entity.id.startsWith('#') ? 'Character'
+                : match.entity.id.startsWith('@') ? 'World'
+                : 'Project';
+
+            return {
+                id: match.entity.id,
+                name: match.entity.name,
+                type: entityType as 'Character' | 'World' | 'Project',
+                matchedVia: match.matchedField === 'alias' ? match.matchedValue : undefined,
+                score: match.score
+            };
+        });
+
+        // Add "Create new" options if query is not empty and no exact match
+        const hasExactMatch = fuzzyMatches.some(m => m.score === 0);
+        const createOptions = [];
+
+        if (mentionQuery.trim().length > 0 && !hasExactMatch) {
+            createOptions.push(
+                {
+                    id: `__create_character__${mentionQuery}`,
+                    name: mentionQuery,
+                    type: 'Character' as const,
+                    isCreate: true
+                },
+                {
+                    id: `__create_world__${mentionQuery}`,
+                    name: mentionQuery,
+                    type: 'World' as const,
+                    isCreate: true
+                },
+                {
+                    id: `__create_project__${mentionQuery}`,
+                    name: mentionQuery,
+                    type: 'Project' as const,
+                    isCreate: true
+                }
+            );
+        }
+
+        return [...existingMatches, ...createOptions];
     };
 
     const handleCommandSelect = (cmd: typeof AVAILABLE_COMMANDS[0]) => {
@@ -1117,6 +1306,13 @@ What would you like to create today?`,
 
     const sendMessage = async (messageContent: string) => {
         if (!messageContent.trim() || isLoading || !hasApiKey) return;
+
+        // Get current API key (must be calculated at call time, not at component mount)
+        const currentApiKey = getChatApiKey(provider);
+        if (!currentApiKey) {
+            setError('API key not found. Please configure in Settings.');
+            return;
+        }
 
         // Augment message with context if mentions found
         let payloadContent = messageContent;
@@ -1386,6 +1582,15 @@ What would you like to create today?`,
         setIsLoading(true);
         setError(null);
 
+        // Add API call log
+        if (isAdminMode) {
+            addDevLog('api', `Sending message to ${apiConfig?.provider || 'anthropic'}`, {
+                provider: apiConfig?.provider || 'anthropic',
+                mode: mode || 'chat',
+                hasLinkedEntity: !!linkedEntity,
+            });
+        }
+
         try {
             // Prepare structured context for API context budget system
             const structuredContext: Record<string, any> = {};
@@ -1405,8 +1610,49 @@ What would you like to create today?`,
                 structuredContext.modeInstruction = modeInstruction;
             }
 
+            // Week 4: Prepare linkedEntities for Just-in-Time Context Injection
+            const linkedEntities: { characters: any[]; worlds: any[]; projects: any[] } = {
+                characters: [],
+                worlds: [],
+                projects: []
+            };
+
+            // Add linked entity
+            if (linkedEntity) {
+                if (linkedEntity.type === 'character') {
+                    const char = characters.find(c => c.id === linkedEntity.id);
+                    if (char) linkedEntities.characters.push(char);
+                } else if (linkedEntity.type === 'world') {
+                    const world = worlds.find(w => w.id === linkedEntity.id);
+                    if (world) linkedEntities.worlds.push(world);
+                } else if (linkedEntity.type === 'project') {
+                    const project = projects.find(p => p.id === linkedEntity.id);
+                    if (project) linkedEntities.projects.push(project);
+                }
+            }
+
+            // Add session setup entities (for multi-entity modes like script/scene)
+            if (sessionSetupConfig) {
+                sessionSetupConfig.selectedCharacters.forEach(charId => {
+                    const char = characters.find(c => c.id === charId);
+                    if (char && !linkedEntities.characters.find(c => c.id === charId)) {
+                        linkedEntities.characters.push(char);
+                    }
+                });
+                sessionSetupConfig.selectedWorlds.forEach(worldId => {
+                    const world = worlds.find(w => w.id === worldId);
+                    if (world && !linkedEntities.worlds.find(w => w.id === worldId)) {
+                        linkedEntities.worlds.push(world);
+                    }
+                });
+            }
+
             // Check if admin mode is active
             const isAdminModeActive = typeof window !== 'undefined' && localStorage.getItem('5d-admin-mode') === 'true';
+
+            // Determine if we should use context injection (enabled when we have a mode and entities)
+            const hasEntities = linkedEntities.characters.length > 0 || linkedEntities.worlds.length > 0 || linkedEntities.projects.length > 0;
+            const useContextInjection = hasEntities && mode !== null;
 
             const response = await fetch('/api/chat', {
                 method: 'POST',
@@ -1420,7 +1666,11 @@ What would you like to create today?`,
                     apiKey: currentApiKey,
                     isAdminMode: isAdminModeActive, // Send admin mode flag to API route
                     // Pass structured context for API context budget management
-                    ...structuredContext
+                    ...structuredContext,
+                    // Week 4: Just-in-Time Context Injection parameters
+                    useContextInjection,
+                    chatMode: mode || 'chat',
+                    linkedEntities: useContextInjection ? linkedEntities : undefined,
                 }),
             });
 
@@ -1429,8 +1679,50 @@ What would you like to create today?`,
                 throw new Error(errorData.error || 'Failed to get response');
             }
 
-            const reader = response.body?.getReader();
-            const decoder = new TextDecoder();
+            // Check if response is JSON (admin mode with debug info) or plain text
+            const contentType = response.headers.get('content-type') || '';
+            let fullContent = '';
+            let debugInfo: DevModeDebugInfo | null = null;
+
+            if (contentType.includes('application/json') && isAdminModeActive) {
+                // Admin mode: Parse JSON response with debug info
+                const data = await response.json();
+                fullContent = data.text || '';
+                debugInfo = data.debug || null;
+
+                // Add debug info to logs
+                if (debugInfo) {
+                    if (debugInfo.rag) {
+                        addDevLog('rag', `Retrieved ${debugInfo.rag.results.length} knowledge bank entries`, debugInfo.rag);
+                    }
+                    if (debugInfo.context) {
+                        addDevLog('context', `Context budget: ${debugInfo.context.totalTokens}/${debugInfo.context.tokenBudget} tokens`, debugInfo.context);
+                    }
+                    // Week 4: Log context injection info
+                    if (debugInfo.contextInjection) {
+                        const ci = debugInfo.contextInjection;
+                        const entityCount = ci.entitiesIncluded.characters.length + ci.entitiesIncluded.worlds.length + ci.entitiesIncluded.projects.length;
+                        addDevLog('context', `Context injection (${ci.mode}): ${ci.tokenCount}/${ci.budget} tokens, ${entityCount} entities`, ci);
+                    }
+                }
+            } else {
+                // Normal mode: Read as text stream
+                const reader = response.body?.getReader();
+                const decoder = new TextDecoder();
+
+                if (reader) {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        const chunk = decoder.decode(value, { stream: true });
+                        fullContent += chunk;
+                    }
+                } else {
+                    // Fallback: read as text if no stream
+                    fullContent = await response.text();
+                }
+            }
 
             const assistantMessage: Message = {
                 id: (Date.now() + 1).toString(),
@@ -1440,29 +1732,22 @@ What would you like to create today?`,
 
             setMessages(prev => [...prev, assistantMessage]);
 
-            let fullContent = '';
-
-            if (reader) {
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    const chunk = decoder.decode(value, { stream: true });
-                    fullContent += chunk;
-
-                    const { cleanContent, choices } = parseChoices(fullContent);
-
-                    setMessages(prev =>
-                        prev.map(m =>
-                            m.id === assistantMessage.id
-                                ? { ...m, content: cleanContent, choices: choices.length > 0 ? choices : undefined }
-                                : m
-                        )
-                    );
-                }
+            // Update debug info state
+            if (debugInfo) {
+                setDevModeDebugInfo(debugInfo);
             }
 
-            // Parse final content and choices after streaming completes
+            // Parse content and update message
+            const { cleanContent, choices } = parseChoices(fullContent);
+            setMessages(prev =>
+                prev.map(m =>
+                    m.id === assistantMessage.id
+                        ? { ...m, content: cleanContent, choices: choices.length > 0 ? choices : undefined }
+                        : m
+                )
+            );
+
+            // Parse final content and choices (already done above for non-streaming)
             const { cleanContent: finalCleanContent, choices: finalChoices } = parseChoices(fullContent);
 
             // Check for save blocks and attach pending update
@@ -1602,7 +1887,19 @@ What would you like to create today?`,
             }
 
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'An error occurred');
+            const errorMessage = err instanceof Error ? err.message : 'An error occurred';
+            setError(errorMessage);
+            
+            // Add error log to dev mode
+            if (isAdminMode) {
+                addDevLog('error', errorMessage, {
+                    error: err instanceof Error ? {
+                        name: err.name,
+                        message: err.message,
+                        stack: err.stack,
+                    } : String(err),
+                });
+            }
         } finally {
             setIsLoading(false);
         }
@@ -1726,10 +2023,10 @@ What would you like to create today?`,
                 setMessages([{
                     id: 'intro',
                     role: 'assistant',
-                    content: `ðŸ“ **Workshop: ${focus?.charAt(0).toUpperCase() + focus!.slice(1)}**\n\n${focusPrompt}`,
+                    content: `🔍 **Workshop: ${focus?.charAt(0).toUpperCase() + focus!.slice(1)}**\n\n${focusPrompt}`,
                     choices: [
                         { id: 'brainstorm', label: '🧠  Brainstorm Ideas', description: 'Generate concepts' },
-                        { id: 'critique', label: 'ðŸ” Critique Current', description: 'Analyze existing data' }
+                        { id: 'critique', label: '🔍 Critique Current', description: 'Analyze existing data' }
                     ]
                 }]);
                 return;
@@ -2372,6 +2669,99 @@ What would you like to create today?`,
         }
     };
 
+    // Handler for Options button click - context-aware
+    const handleOptionsToggle = () => {
+        // If enabling options and there are messages (not just welcome), show modal
+        if (!showGenerateOptions && messages.length > 1 && messages.some(m => m.role === 'assistant' && m.id !== 'welcome')) {
+            setPendingOptionsEnable(true);
+            setShowOptionsEnableModal(true);
+        } else {
+            // Toggle directly if disabling or no messages yet
+            setShowGenerateOptions(!showGenerateOptions);
+            // Save preference for this mode
+            if (mode) {
+                const disabledModes = localStorage.getItem('5d-options-disabled-modes');
+                let parsed: string[] = [];
+                if (disabledModes) {
+                    try {
+                        parsed = JSON.parse(disabledModes);
+                    } catch (e) {
+                        // Invalid JSON, ignore
+                    }
+                }
+                if (!showGenerateOptions) {
+                    // Enabling - remove from disabled list
+                    const updated = parsed.filter(m => m !== mode);
+                    localStorage.setItem('5d-options-disabled-modes', JSON.stringify(updated));
+                } else {
+                    // Disabling - add to disabled list
+                    if (!parsed.includes(mode)) {
+                        parsed.push(mode);
+                        localStorage.setItem('5d-options-disabled-modes', JSON.stringify(parsed));
+                    }
+                }
+            }
+        }
+    };
+
+    // Handler for rerunning last AI question with options enabled
+    const handleRerunLastWithOptions = () => {
+        setShowOptionsEnableModal(false);
+        setShowGenerateOptions(true);
+        setPendingOptionsEnable(false);
+        
+        // Find last assistant message
+        const lastAssistantIndex = messages.findLastIndex(m => m.role === 'assistant' && m.id !== 'welcome');
+        if (lastAssistantIndex === -1) return;
+        
+        // Find the user message that preceded it
+        const priorMessages = messages.slice(0, lastAssistantIndex);
+        const lastUserMessage = priorMessages[priorMessages.length - 1];
+        
+        if (!lastUserMessage || lastUserMessage.role !== 'user') {
+            return;
+        }
+        
+        // Remove the last assistant message and resend the user message
+        const messagesToKeep = messages.slice(0, lastAssistantIndex);
+        setMessages(messagesToKeep);
+        
+        // Small delay to ensure state update processes
+        setTimeout(() => sendMessage(lastUserMessage.content), 0);
+    };
+
+    // Handler for refreshing a specific message with options forced
+    const handleRefreshWithOptions = (messageId: string) => {
+        const index = messages.findIndex(m => m.id === messageId);
+        if (index === -1) return;
+        
+        const priorMessages = messages.slice(0, index);
+        const lastUserMessage = priorMessages[priorMessages.length - 1];
+        
+        if (!lastUserMessage || lastUserMessage.role !== 'user') {
+            return;
+        }
+        
+        // Temporarily enable options if not already enabled
+        const wasEnabled = showGenerateOptions;
+        if (!wasEnabled) {
+            setShowGenerateOptions(true);
+        }
+        
+        // Remove messages from this point forward
+        const messagesToKeep = messages.slice(0, index);
+        setMessages(messagesToKeep);
+        
+        // Resend the user message with options enabled
+        setTimeout(() => {
+            sendMessage(lastUserMessage.content);
+            // Restore previous state if it was disabled
+            if (!wasEnabled) {
+                setTimeout(() => setShowGenerateOptions(false), 100);
+            }
+        }, 0);
+    };
+
     const renderMessage = (message: Message) => {
         const content = message.content;
         const saveBlock = parseSaveBlock(content);
@@ -2499,7 +2889,7 @@ What would you like to create today?`,
             <header className="h-14 border-b border-border px-6 flex items-center justify-between glass-strong shrink-0">
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
-                        {(() => {
+                        {mounted ? (() => {
                             // Check admin mode and keys in real-time using utility function for consistency
                             const adminModeActive = typeof window !== 'undefined' && localStorage.getItem('5d-admin-mode') === 'true';
                             
@@ -2534,7 +2924,13 @@ What would you like to create today?`,
                                     </>
                                 );
                             }
-                        })()}
+                        })() : (
+                            // Server-side render: show neutral state to match initial client render
+                            <>
+                                <div className="w-2 h-2 rounded-full bg-red-400" />
+                                <span className="font-medium text-sm text-red-400">Setup Required</span>
+                            </>
+                        )}
                     </div>
                     <div className="h-4 w-px bg-border" />
 
@@ -2548,6 +2944,21 @@ What would you like to create today?`,
                     >
                         <History className="w-4 h-4" />
                     </button>
+                    {isAdminMode && (
+                        <>
+                            <div className="h-4 w-px bg-border" />
+                            <button
+                                onClick={() => setDevModeOpen(!devModeOpen)}
+                                className={cn(
+                                    "flex items-center justify-center w-8 h-8 rounded-full transition-colors",
+                                    devModeOpen ? "bg-purple-500/20 text-purple-400" : "hover:bg-purple-500/10 text-muted-foreground"
+                                )}
+                                title="Dev Mode"
+                            >
+                                <Bug className="w-4 h-4" />
+                            </button>
+                        </>
+                    )}
                     <div className="h-4 w-px bg-border" />
 
                     {/* Model Selector Dropdown */}
@@ -2718,6 +3129,18 @@ What would you like to create today?`,
                                 <RefreshCw className="mr-2 h-3.5 w-3.5" />
                                 Restart Chat
                             </DropdownMenuItem>
+                            {activeSessionId && (
+                                <>
+                                    <DropdownMenuSeparator className="bg-white/10" />
+                                    <DropdownMenuItem 
+                                        onClick={() => setShowLogSessionModal(true)} 
+                                        className="text-xs cursor-pointer focus:bg-white/10 focus:text-white"
+                                    >
+                                        <FileText className="mr-2 h-3.5 w-3.5" />
+                                        Log Session
+                                    </DropdownMenuItem>
+                                </>
+                            )}
                             <DropdownMenuSeparator className="bg-white/10" />
 
                             {/* Session Tags Section */}
@@ -2799,7 +3222,7 @@ What would you like to create today?`,
 
             {/* Warnings ... */}
             {
-                !hasApiKey && !dismissApiKeyBanner && typeof window !== 'undefined' && localStorage.getItem('5d-admin-mode') !== 'true' && (
+                mounted && !hasApiKey && !dismissApiKeyBanner && typeof window !== 'undefined' && localStorage.getItem('5d-admin-mode') !== 'true' && (
                     <div className="mx-6 mt-4 p-4 rounded-xl glass-card border-amber-500/20 bg-amber-500/5">
                         <div className="flex items-start gap-3">
                             <AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
@@ -2838,9 +3261,14 @@ What would you like to create today?`,
                 )
             }
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-6 py-8">
-                <div className="max-w-3xl mx-auto space-y-6">
+            {/* Main Content Area with Context Sidecar */}
+            <div className="flex-1 flex overflow-hidden relative">
+                {/* Messages */}
+                <div className={cn(
+                    "flex-1 overflow-y-auto px-6 py-8 transition-all duration-300",
+                    isContextSidecarOpen && "mr-[300px]"
+                )}>
+                    <div className="max-w-3xl mx-auto space-y-6">
                     {messages.map((message, index) => (
                         <div key={message.id} className={cn("animate-fade-in flex items-start gap-3", message.role === 'user' ? 'flex-row-reverse justify-end' : 'flex-row justify-start')} style={{ animationDelay: `${index * 50}ms` }}>
                             {/* Avatar */}
@@ -2866,8 +3294,23 @@ What would you like to create today?`,
                             )}
                             <div className={cn("max-w-[85%] rounded-2xl px-5 py-4", message.role === 'user' ? "message-user" : "message-assistant", showAvatarsInChat && (message.role === 'user' ? 'order-1' : 'order-2'))}>
                                 {message.role === 'assistant' && (
-                                    <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/5">
+                                    <div className="flex items-center justify-between mb-3 pb-3 border-b border-white/5">
                                         <span className="text-xs font-medium text-foreground">5D Creator</span>
+                                        {showGenerateOptions && (
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] text-violet-400/70 flex items-center gap-1">
+                                                    <Sparkles className="w-3 h-3" />
+                                                    Options Active
+                                                </span>
+                                                <button
+                                                    onClick={() => handleRefreshWithOptions(message.id)}
+                                                    className="p-1 rounded-lg hover:bg-white/5 text-violet-400/70 hover:text-violet-400 transition-colors"
+                                                    title="Regenerate with options"
+                                                >
+                                                    <RefreshCw className="w-3 h-3" />
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                                 {message.role === 'user' && userProfile?.name && (
@@ -2892,6 +3335,15 @@ What would you like to create today?`,
                                         <div className="flex items-center gap-1">
                                             <button onClick={() => copyToClipboard(message.content)} className="p-1.5 rounded-lg hover:bg-white/5 text-muted-foreground hover:text-foreground transition-colors"><Copy className="w-3.5 h-3.5" /></button>
                                             <button onClick={() => handleFork(message.id)} className="p-1.5 rounded-lg hover:bg-white/5 text-muted-foreground hover:text-foreground transition-colors" title="Fork Conversation from here"><GitFork className="w-3.5 h-3.5" /></button>
+                                            {showGenerateOptions && (
+                                                <button 
+                                                    onClick={() => handleRefreshWithOptions(message.id)} 
+                                                    className="p-1.5 rounded-lg hover:bg-white/5 text-violet-400/70 hover:text-violet-400 transition-colors" 
+                                                    title="Regenerate with options forced"
+                                                >
+                                                    <RefreshCw className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
                                             <button onClick={() => handleReloadClick(message.id)} className="p-1.5 rounded-lg hover:bg-white/5 text-muted-foreground hover:text-foreground transition-colors"><RotateCcw className="w-3.5 h-3.5" /></button>
                                         </div>
                                     )}
@@ -2914,34 +3366,75 @@ What would you like to create today?`,
                         </div>
                     )}
                     <div ref={messagesEndRef} />
+                    </div>
                 </div>
+
+                {/* Phase 1 Week 3: Context Sidecar */}
+                <ContextSidecar
+                    text={chatText}
+                    isOpen={isContextSidecarOpen}
+                    onToggle={handleToggleContextSidecar}
+                    onToast={(message, type) => {
+                        setToast({ message, type });
+                        setTimeout(() => setToast(null), 3000);
+                    }}
+                />
             </div>
 
             {/* Input Area */}
             <div className="shrink-0 border-t border-border glass-strong relative z-20">
                 <div className="max-w-3xl mx-auto p-4 relative">
-                    {/* Mentions Popup */}
+                    {/* Phase 1: Enhanced Mentions Popup with Fuzzy Search & Stub Creation */}
                     {mentionQuery !== null && (
-                        <div className="absolute bottom-full left-4 mb-2 w-64 glass-card rounded-xl border border-white/10 overflow-hidden shadow-2xl animate-in slide-in-from-bottom-2 fade-in divide-y divide-white/5">
-                            <div className="px-3 py-2 bg-white/5 text-xs font-semibold text-muted-foreground">
-                                Mention...
+                        <div className="absolute bottom-full left-4 mb-2 w-80 glass-card rounded-xl border border-white/10 overflow-hidden shadow-2xl animate-in slide-in-from-bottom-2 fade-in divide-y divide-white/5">
+                            <div className="px-3 py-2 bg-white/5 flex items-center justify-between">
+                                <span className="text-xs font-semibold text-muted-foreground">Mention @{mentionQuery}</span>
+                                <Sparkles className="w-3 h-3 text-primary" />
                             </div>
                             {suggestions.length > 0 ? (
-                                suggestions.map(item => (
+                                suggestions.map((item: any) => (
                                     <button
                                         key={item.id}
                                         onClick={() => handleMentionSelect(item)}
-                                        className="w-full text-left px-3 py-2.5 hover:bg-primary/10 transition-colors flex items-center gap-3 text-sm group"
+                                        className={cn(
+                                            "w-full text-left px-3 py-2.5 hover:bg-primary/10 transition-colors flex items-center gap-3 text-sm group",
+                                            item.isCreate && "bg-primary/5 border-l-2 border-primary/30"
+                                        )}
                                     >
                                         <div className={cn(
                                             "w-6 h-6 rounded-full flex items-center justify-center shrink-0",
-                                            item.type === 'Character' ? "bg-emerald-500/10 text-emerald-500" : "bg-violet-500/10 text-violet-500"
+                                            item.type === 'Character' && !item.isCreate && "bg-cyan-500/10 text-cyan-400",
+                                            item.type === 'World' && !item.isCreate && "bg-fuchsia-500/10 text-fuchsia-400",
+                                            item.type === 'Project' && !item.isCreate && "bg-violet-500/10 text-violet-400",
+                                            item.isCreate && "bg-primary/20 text-primary"
                                         )}>
-                                            {item.type === 'Character' ? <User className="w-3.5 h-3.5" /> : <Globe className="w-3.5 h-3.5" />}
+                                            {item.isCreate ? (
+                                                <Sparkles className="w-3.5 h-3.5" />
+                                            ) : (
+                                                <>
+                                                    {item.type === 'Character' && <User className="w-3.5 h-3.5" />}
+                                                    {item.type === 'World' && <Globe className="w-3.5 h-3.5" />}
+                                                    {item.type === 'Project' && <Folder className="w-3.5 h-3.5" />}
+                                                </>
+                                            )}
                                         </div>
                                         <div className="flex-1 truncate">
-                                            <span className="text-foreground font-medium">{item.name}</span>
-                                            <span className="ml-2 text-xs text-muted-foreground opacity-50">{item.type}</span>
+                                            {item.isCreate ? (
+                                                <>
+                                                    <span className="text-primary font-medium">Create new {item.type}</span>
+                                                    <span className="ml-2 text-xs text-primary/60">"{item.name}"</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="text-foreground font-medium">{item.name}</span>
+                                                    <span className="ml-2 text-xs text-muted-foreground opacity-50">{item.type}</span>
+                                                    {item.matchedVia && (
+                                                        <div className="text-xs text-muted-foreground/60 mt-0.5">
+                                                            via alias: {item.matchedVia}
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
                                         </div>
                                     </button>
                                 ))
@@ -3011,36 +3504,47 @@ What would you like to create today?`,
                             </div>
                         </div>
 
-                        {/* Generate Options Toggle */}
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowGenerateOptions(!showGenerateOptions)}
-                                    className={cn(
-                                        "flex flex-col items-center justify-center gap-0.5 min-w-[3.5rem] px-1 rounded-xl transition-all border border-transparent h-[50px]",
-                                        showGenerateOptions
-                                            ? "bg-violet-500/10 text-violet-400 border-violet-500/20"
-                                            : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
-                                    )}
-                                >
-                                    <div className={cn("w-8 h-4 rounded-full border relative transition-colors", showGenerateOptions ? "bg-violet-500 border-violet-500" : "bg-transparent border-muted-foreground")}>
-                                        <div className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all", showGenerateOptions ? "left-[18px]" : "left-0.5")} />
-                                    </div>
-                                    <span className="text-[9px] font-medium">Options</span>
-                                </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="bg-black/90 border-white/10 text-white max-w-xs">
-                                <p className="text-xs">
-                                    {showGenerateOptions 
-                                        ? "AI will provide interactive choice options after each response. Click to disable."
-                                        : "Enable AI to automatically generate interactive choice options after each response, making conversations more engaging and easier to navigate."}
-                                </p>
-                            </TooltipContent>
-                        </Tooltip>
+                        {/* Generate Options Toggle - Only show for supported modes */}
+                        {modeSupportsOptions(mode) && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <button
+                                        type="button"
+                                        onClick={handleOptionsToggle}
+                                        className={cn(
+                                            "flex flex-col items-center justify-center gap-0.5 min-w-[3.5rem] px-1 rounded-xl transition-all border border-transparent h-[50px]",
+                                            showGenerateOptions
+                                                ? "bg-violet-500/10 text-violet-400 border-violet-500/20"
+                                                : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                                        )}
+                                    >
+                                        <div className={cn("w-8 h-4 rounded-full border relative transition-colors", showGenerateOptions ? "bg-violet-500 border-violet-500" : "bg-transparent border-muted-foreground")}>
+                                            <div className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all", showGenerateOptions ? "left-[18px]" : "left-0.5")} />
+                                        </div>
+                                        <span className="text-[9px] font-medium">Options</span>
+                                    </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="bg-black/90 border-white/10 text-white max-w-xs">
+                                    <p className="text-xs">
+                                        {showGenerateOptions 
+                                            ? "AI will provide interactive choice options after each response. Click to disable."
+                                            : "Enable AI to automatically generate interactive choice options after each response, making conversations more engaging and easier to navigate."}
+                                    </p>
+                                </TooltipContent>
+                            </Tooltip>
+                        )}
 
-                        <button type="submit" disabled={isLoading || !input.trim() || !hasApiKey} className={cn("premium-button flex items-center justify-center translate-y-0 h-[50px] w-[50px]", "disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none")}>
-                            <Send className="h-5 w-5" />
+                        {/* Main Send button */}
+                        <button
+                            type="submit"
+                            disabled={isLoading || !input.trim() || !hasApiKey}
+                            className={cn(
+                                "premium-button flex items-center justify-center translate-y-0 h-[50px] w-[50px]",
+                                "disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                            )}
+                            aria-label="Send message"
+                        >
+                            <Send className="h-7 w-7 text-white" />
                         </button>
                     </form>
                 </div>
@@ -3296,7 +3800,19 @@ What would you like to create today?`,
                 const handleExtractGeneratedContent = async () => {
                     setIsExtractingContent(true);
                     setShowSaveDocumentOptionModal(false);
-                    
+
+                    // Get API key at call time
+                    const extractApiKey = getChatApiKey(provider);
+                    if (!extractApiKey) {
+                        setToast({
+                            message: 'API key not found. Cannot extract content.',
+                            type: 'warning'
+                        });
+                        setTimeout(() => setToast(null), 3000);
+                        setIsExtractingContent(false);
+                        return;
+                    }
+
                     try {
                         // Build extraction prompt
                         const extractionPrompt = `You are extracting ${docType === 'script' ? 'script' : 'roleplay'} content from a chat conversation.
@@ -3330,7 +3846,7 @@ Extract and format the ${docType === 'script' ? 'script' : 'roleplay'} content:`
                                     }
                                 ],
                                 provider: apiConfig?.provider || 'anthropic',
-                                apiKey: currentApiKey,
+                                apiKey: extractApiKey,
                             }),
                         });
 
@@ -3531,7 +4047,92 @@ Extract and format the ${docType === 'script' ? 'script' : 'roleplay'} content:`
                     setShowUserNameSetup(false);
                 }}
             />
-        </div >
+
+            {/* Dev Mode Panel */}
+            {isAdminMode && (
+                <DevModePanel
+                    isOpen={devModeOpen}
+                    onToggle={() => setDevModeOpen(!devModeOpen)}
+                    logs={devModeLogs}
+                    debugInfo={devModeDebugInfo}
+                    onClearLogs={clearDevLogs}
+                />
+            )}
+
+            {/* Log Session Modal */}
+            {activeSessionId && (
+                <LogSessionModal
+                    isOpen={showLogSessionModal}
+                    onClose={() => setShowLogSessionModal(false)}
+                    session={chatSessions.find(s => s.id === activeSessionId) || null}
+                    onLogged={(path) => {
+                        setToast({
+                            message: `Session logged to ${path}`,
+                            type: 'success'
+                        });
+                        setTimeout(() => setToast(null), 5000);
+                    }}
+                />
+            )}
+
+            {/* Options Enable Modal */}
+            <Dialog open={showOptionsEnableModal} onOpenChange={setShowOptionsEnableModal}>
+                <DialogContent className="sm:max-w-md bg-black/95 border-white/10 backdrop-blur-xl text-foreground">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Sparkles className="w-5 h-5 text-violet-400" />
+                            Enable Options Feature
+                        </DialogTitle>
+                        <DialogDescription>
+                            You're enabling the Options feature during an active chat. Would you like to regenerate the last AI response with options included?
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 pt-4">
+                        <div className="p-4 rounded-lg bg-violet-500/10 border border-violet-500/20">
+                            <p className="text-sm text-foreground">
+                                This will rerun the last question from the AI with the Options feature enabled, so you'll get interactive choice options for that response.
+                            </p>
+                        </div>
+
+                        <DialogFooter className="gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={() => {
+                                    setShowOptionsEnableModal(false);
+                                    setShowGenerateOptions(true);
+                                    setPendingOptionsEnable(false);
+                                    // Save preference for this mode
+                                    if (mode) {
+                                        const disabledModes = localStorage.getItem('5d-options-disabled-modes');
+                                        let parsed: string[] = [];
+                                        if (disabledModes) {
+                                            try {
+                                                parsed = JSON.parse(disabledModes);
+                                            } catch (e) {
+                                                // Invalid JSON, ignore
+                                            }
+                                        }
+                                        const updated = parsed.filter(m => m !== mode);
+                                        localStorage.setItem('5d-options-disabled-modes', JSON.stringify(updated));
+                                    }
+                                }}
+                                className="border-white/10 hover:bg-white/5"
+                            >
+                                Just Enable
+                            </Button>
+                            <Button
+                                onClick={handleRerunLastWithOptions}
+                                className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white border-0"
+                            >
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Rerun Last Question
+                            </Button>
+                        </DialogFooter>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </div>
     );
 }
 
