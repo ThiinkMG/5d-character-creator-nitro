@@ -25,7 +25,11 @@ import {
     Layers,
     Eye,
     ChevronsUpDown,
-    X
+    X,
+    Key,
+    AlertCircle,
+    CheckCircle,
+    Lock
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
@@ -659,6 +663,177 @@ const createSections = (): GuideSection[] => [
                     </div>
                 </div>
             )
+        },
+        {
+            id: 'api-keys',
+            title: 'API Keys Setup',
+            icon: <Key className="h-5 w-5" />,
+            content: (
+                <div className="space-y-6">
+                    <div>
+                        <h3 className="text-lg font-semibold mb-4">Setting Up API Keys</h3>
+                        <p className="text-muted-foreground mb-4">
+                            To use 5D Character Creator, you'll need API keys from AI providers. This guide will help you set them up correctly.
+                        </p>
+                    </div>
+
+                    <div className="glass-card rounded-xl p-5">
+                        <h4 className="font-semibold mb-3 flex items-center gap-2">
+                            <Key className="h-4 w-4 text-primary" />
+                            Getting Your API Keys
+                        </h4>
+                        <div className="space-y-4">
+                            <div>
+                                <h5 className="font-medium mb-2 text-sm">Anthropic Claude API Key</h5>
+                                <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground ml-2">
+                                    <li>Go to <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Anthropic Console</a></li>
+                                    <li>Sign up or log in to your account</li>
+                                    <li>Navigate to API Keys section</li>
+                                    <li>Click "Create Key"</li>
+                                    <li>Copy your API key (starts with <code className="px-1 py-0.5 rounded bg-primary/10 text-primary text-xs">sk-ant-</code>)</li>
+                                    <li>Paste it into Settings → Anthropic API Key</li>
+                                </ol>
+                            </div>
+                            <div>
+                                <h5 className="font-medium mb-2 text-sm">OpenAI GPT-4 API Key</h5>
+                                <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground ml-2">
+                                    <li>Go to <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">OpenAI Platform</a></li>
+                                    <li>Sign up or log in to your account</li>
+                                    <li>Navigate to API Keys section</li>
+                                    <li>Click "Create new secret key"</li>
+                                    <li>Copy your API key (starts with <code className="px-1 py-0.5 rounded bg-primary/10 text-primary text-xs">sk-</code>)</li>
+                                    <li>Paste it into Settings → OpenAI API Key</li>
+                                </ol>
+                            </div>
+                            <div>
+                                <h5 className="font-medium mb-2 text-sm">Google Gemini API Key (for Image Generation)</h5>
+                                <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground ml-2">
+                                    <li>Go to <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Google AI Studio</a></li>
+                                    <li>Sign in with your Google account</li>
+                                    <li>Click "Get API Key"</li>
+                                    <li>Create a new API key or use an existing one</li>
+                                    <li>Copy your API key (starts with <code className="px-1 py-0.5 rounded bg-primary/10 text-primary text-xs">AIza</code>)</li>
+                                    <li>Paste it into Settings → Gemini API Key</li>
+                                </ol>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="glass-card rounded-xl p-5">
+                        <h4 className="font-semibold mb-3 flex items-center gap-2">
+                            <Settings className="h-4 w-4 text-primary" />
+                            Using API Keys in Settings
+                        </h4>
+                        <div className="space-y-3 text-sm text-muted-foreground">
+                            <div className="flex items-start gap-2">
+                                <ChevronRight className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                                <span>Go to <Link href="/settings" className="text-primary hover:underline">Settings</Link> page</span>
+                            </div>
+                            <div className="flex items-start gap-2">
+                                <ChevronRight className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                                <span>Choose your preferred chat provider (Claude or GPT-4)</span>
+                            </div>
+                            <div className="flex items-start gap-2">
+                                <ChevronRight className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                                <span>Enter your API key in the corresponding field</span>
+                            </div>
+                            <div className="flex items-start gap-2">
+                                <ChevronRight className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                                <span>Click "Test Chat Connection" to verify your key works</span>
+                            </div>
+                            <div className="flex items-start gap-2">
+                                <ChevronRight className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                                <span>If the key is invalid, the field will highlight in red</span>
+                            </div>
+                            <div className="flex items-start gap-2">
+                                <ChevronRight className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                                <span>Save your settings - keys are stored locally in your browser</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="glass-card rounded-xl p-5 border-yellow-500/20 bg-yellow-500/5">
+                        <h4 className="font-semibold mb-3 flex items-center gap-2 text-yellow-400">
+                            <AlertCircle className="h-4 w-4" />
+                            Troubleshooting Invalid API Keys
+                        </h4>
+                        <div className="space-y-3 text-sm text-muted-foreground">
+                            <div>
+                                <strong className="text-foreground">If you see "Invalid API key" error:</strong>
+                                <ul className="list-disc list-inside space-y-1 ml-4 mt-1">
+                                    <li>Check that you copied the entire key (no spaces before/after)</li>
+                                    <li>Verify the key hasn't expired or been revoked</li>
+                                    <li>Make sure you're using the correct provider's key</li>
+                                    <li>For Anthropic: Key should start with <code className="px-1 py-0.5 rounded bg-primary/10 text-primary text-xs">sk-ant-</code></li>
+                                    <li>For OpenAI: Key should start with <code className="px-1 py-0.5 rounded bg-primary/10 text-primary text-xs">sk-</code></li>
+                                </ul>
+                            </div>
+                            <div>
+                                <strong className="text-foreground">If you see "Not Found" error:</strong>
+                                <ul className="list-disc list-inside space-y-1 ml-4 mt-1">
+                                    <li>The API key may be invalid or expired</li>
+                                    <li>Check your account billing status (some providers require payment)</li>
+                                    <li>Verify the model is available in your region</li>
+                                    <li>Try regenerating a new API key</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <strong className="text-foreground">Red highlighting on API key field:</strong>
+                                <ul className="list-disc list-inside space-y-1 ml-4 mt-1">
+                                    <li>This indicates which specific API key is invalid</li>
+                                    <li>Fix the highlighted key and test again</li>
+                                    <li>The error will clear when you start typing a new key</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="glass-card rounded-xl p-5 border-primary/20 bg-primary/5">
+                        <h4 className="font-semibold mb-3 flex items-center gap-2 text-primary">
+                            <Lock className="h-4 w-4" />
+                            Admin Mode (For Deployed Sites)
+                        </h4>
+                        <div className="space-y-3 text-sm text-muted-foreground">
+                            <p>
+                                If you're deploying this app to Netlify or another platform, you can use Admin Mode to configure API keys server-side:
+                            </p>
+                            <ol className="list-decimal list-inside space-y-1 ml-2">
+                                <li>Click "Admin Login" in Settings</li>
+                                <li>Enter the admin password</li>
+                                <li>API keys will be loaded from environment variables</li>
+                                <li>In Netlify: Go to Site settings → Environment variables</li>
+                                <li>Add: <code className="px-1 py-0.5 rounded bg-primary/10 text-primary text-xs">ANTHROPIC_API_KEY</code>, <code className="px-1 py-0.5 rounded bg-primary/10 text-primary text-xs">OPENAI_API_KEY</code>, <code className="px-1 py-0.5 rounded bg-primary/10 text-primary text-xs">GEMINI_API_KEY</code></li>
+                                <li>Redeploy your site after adding variables</li>
+                            </ol>
+                        </div>
+                    </div>
+
+                    <div className="glass-card rounded-xl p-5">
+                        <h4 className="font-semibold mb-3 flex items-center gap-2">
+                            <CheckCircle className="h-4 w-4 text-emerald-400" />
+                            Security Best Practices
+                        </h4>
+                        <ul className="space-y-2 text-sm text-muted-foreground">
+                            <li className="flex items-start gap-2">
+                                <ChevronRight className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                                <span>API keys are stored locally in your browser - never sent to our servers</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                                <ChevronRight className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                                <span>Never share your API keys publicly or commit them to version control</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                                <ChevronRight className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                                <span>Rotate your keys regularly for security</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                                <ChevronRight className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                                <span>Set usage limits in your provider dashboard to prevent unexpected charges</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            )
         }
 ];
 
@@ -698,7 +873,8 @@ export default function GuidePage() {
             'commands': ['command', '/generate', '/workshop', '/expand', '/revise', '/analyze', '/simulate', '/worldbio', '/menu', '/help', '/save'],
             'detail-pages': ['detail', 'page', 'view', 'character page', 'world page', 'project page', 'tab', 'document'],
             'ai-guides': ['ai', 'mention', '@', 'link', 'entity', 'context', 'image generation', 'gemini', 'dalle'],
-            'how-tos': ['how to', 'tutorial', 'step', 'guide', 'create', 'upload', 'link', 'generate']
+            'how-tos': ['how to', 'tutorial', 'step', 'guide', 'create', 'upload', 'link', 'generate'],
+            'api-keys': ['api key', 'api keys', 'setup', 'configuration', 'anthropic', 'openai', 'gemini', 'authentication', 'invalid key', 'not found', 'admin mode', 'environment variables', 'netlify']
         };
         return `${title} ${(keywords[section.id] || []).join(' ')}`;
     };

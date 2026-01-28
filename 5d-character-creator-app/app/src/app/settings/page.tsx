@@ -36,6 +36,7 @@ export default function SettingsPage() {
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
     const [testError, setTestError] = useState<string | null>(null);
+    const [invalidKeyField, setInvalidKeyField] = useState<string | null>(null); // Track which key field has an error
     
     // Admin mode state
     const [isAdminMode, setIsAdminMode] = useState(false);
@@ -240,6 +241,7 @@ export default function SettingsPage() {
         setTesting(true);
         setTestResult(null);
         setTestError(null);
+        setInvalidKeyField(null); // Clear previous invalid key
 
         // Get actual API key (from admin keys if in admin mode, otherwise from config)
         let apiKey = '';
@@ -265,6 +267,7 @@ export default function SettingsPage() {
             }
             setTestResult('error');
             setTestError('Please enter an API key first');
+            setInvalidKeyField(config.provider === 'anthropic' ? 'anthropicKey' : 'openaiKey');
             setTesting(false);
             return;
         }
@@ -277,6 +280,7 @@ export default function SettingsPage() {
                     messages: [{ role: 'user', content: 'Say "Connection successful!" and nothing else.' }],
                     provider: config.provider,
                     apiKey,
+                    isAdminMode,
                 }),
             });
 
@@ -286,6 +290,7 @@ export default function SettingsPage() {
                 if (text.toLowerCase().includes('connection successful') || text.trim().length > 0) {
                     setTestResult('success');
                     setTestError(null);
+                    setInvalidKeyField(null); // Clear any previous errors
                 } else {
                     setTestResult('error');
                     setTestError('Unexpected response from API');
@@ -293,10 +298,15 @@ export default function SettingsPage() {
             } else {
                 // Try to read error message from response
                 let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                let invalidKey: string | null = null;
                 try {
                     const errorData = await response.json();
                     if (errorData.error) {
                         errorMessage = errorData.error;
+                    }
+                    // Check if the API returned which key is invalid
+                    if (errorData.invalidKey) {
+                        invalidKey = errorData.invalidKey;
                     }
                 } catch {
                     // If response isn't JSON, try text
@@ -311,12 +321,16 @@ export default function SettingsPage() {
                 }
                 setTestResult('error');
                 setTestError(errorMessage);
+                // Set which key field is invalid (default to current provider's key if not specified)
+                setInvalidKeyField(invalidKey || (config.provider === 'anthropic' ? 'anthropicKey' : 'openaiKey'));
             }
         } catch (error) {
             setTestResult('error');
             const errorMessage = error instanceof Error ? error.message : 'Network error - could not connect to API';
             setTestError(errorMessage);
             console.error('Connection test error:', error);
+            // Set invalid key based on current provider
+            setInvalidKeyField(config.provider === 'anthropic' ? 'anthropicKey' : 'openaiKey');
         }
 
         setTesting(false);
@@ -430,9 +444,22 @@ export default function SettingsPage() {
                                 <Input
                                     type={showAnthropicKey ? 'text' : 'password'}
                                     value={config.anthropicKey}
-                                    onChange={(e) => !isAdminMode && setConfig({ ...config, anthropicKey: e.target.value })}
+                                    onChange={(e) => {
+                                        if (!isAdminMode) {
+                                            setConfig({ ...config, anthropicKey: e.target.value });
+                                            // Clear error when user starts typing
+                                            if (invalidKeyField === 'anthropicKey') {
+                                                setInvalidKeyField(null);
+                                                setTestError(null);
+                                            }
+                                        }
+                                    }}
                                     placeholder={isAdminMode ? "••••••••••••" : "sk-ant-..."}
-                                    className={cn("pr-10 bg-background/50", isAdminMode && "opacity-50 cursor-not-allowed")}
+                                    className={cn(
+                                        "pr-10 bg-background/50", 
+                                        isAdminMode && "opacity-50 cursor-not-allowed",
+                                        invalidKeyField === 'anthropicKey' && "border-red-500 border-2 focus-visible:ring-red-500"
+                                    )}
                                     disabled={isAdminMode}
                                 />
                                 {!isAdminMode && (
@@ -467,9 +494,22 @@ export default function SettingsPage() {
                                 <Input
                                     type={showOpenaiKey ? 'text' : 'password'}
                                     value={config.openaiKey}
-                                    onChange={(e) => !isAdminMode && setConfig({ ...config, openaiKey: e.target.value })}
+                                    onChange={(e) => {
+                                        if (!isAdminMode) {
+                                            setConfig({ ...config, openaiKey: e.target.value });
+                                            // Clear error when user starts typing
+                                            if (invalidKeyField === 'openaiKey') {
+                                                setInvalidKeyField(null);
+                                                setTestError(null);
+                                            }
+                                        }
+                                    }}
                                     placeholder={isAdminMode ? "••••••••••••" : "sk-..."}
-                                    className={cn("pr-10 bg-background/50", isAdminMode && "opacity-50 cursor-not-allowed")}
+                                    className={cn(
+                                        "pr-10 bg-background/50", 
+                                        isAdminMode && "opacity-50 cursor-not-allowed",
+                                        invalidKeyField === 'openaiKey' && "border-red-500 border-2 focus-visible:ring-red-500"
+                                    )}
                                     disabled={isAdminMode}
                                 />
                                 {!isAdminMode && (

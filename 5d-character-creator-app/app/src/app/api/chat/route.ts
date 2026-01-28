@@ -476,11 +476,24 @@ export async function POST(req: Request) {
         } catch (genError) {
             console.error('Text generation error:', genError);
             const errorMsg = genError instanceof Error ? genError.message : String(genError);
+            const errorLower = errorMsg.toLowerCase();
+            
+            // Determine which API key is being used
+            const keyName = provider === 'openai' ? 'OpenAI' : 'Anthropic';
+            const envVarName = provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY';
             
             // Check for specific API errors
-            if (errorMsg.includes('401') || errorMsg.includes('authentication') || errorMsg.includes('Invalid API key')) {
+            if (errorLower.includes('401') || errorLower.includes('authentication') || errorLower.includes('invalid api key') || errorLower.includes('unauthorized')) {
+                const errorMessage = isAdminMode 
+                    ? `Invalid ${keyName} API key. The ${envVarName} environment variable in Netlify may be incorrect or expired. Please check your API key in Netlify project settings.`
+                    : `Invalid ${keyName} API key. Please check your ${keyName} API key in Settings.`;
+                
                 return new Response(
-                    JSON.stringify({ error: 'Invalid API key. Please check your API key in Settings.' }),
+                    JSON.stringify({ 
+                        error: errorMessage,
+                        invalidKey: provider === 'openai' ? 'openaiKey' : 'anthropicKey',
+                        provider: provider
+                    }),
                     { 
                         status: 401, 
                         headers: { 
@@ -491,7 +504,29 @@ export async function POST(req: Request) {
                 );
             }
             
-            if (errorMsg.includes('429') || errorMsg.includes('rate limit')) {
+            // Check for "Not Found" errors (often means invalid API key or model not found)
+            if (errorLower.includes('not found') || errorLower.includes('404') || errorLower.includes('model not found')) {
+                const errorMessage = isAdminMode
+                    ? `API key or model not found. The ${envVarName} environment variable may be invalid, or the model may not be available. Please verify your ${keyName} API key in Netlify project settings.`
+                    : `API key or model not found. Please verify your ${keyName} API key is correct in Settings.`;
+                
+                return new Response(
+                    JSON.stringify({ 
+                        error: errorMessage,
+                        invalidKey: provider === 'openai' ? 'openaiKey' : 'anthropicKey',
+                        provider: provider
+                    }),
+                    { 
+                        status: 404, 
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            ...corsHeaders
+                        } 
+                    }
+                );
+            }
+            
+            if (errorLower.includes('429') || errorLower.includes('rate limit')) {
                 return new Response(
                     JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
                     { 
@@ -523,18 +558,30 @@ export async function POST(req: Request) {
         
         if (error instanceof Error) {
             errorMessage = error.message;
+            const errorLower = errorMessage.toLowerCase();
+            
+            // Determine which API key is being used
+            const keyName = provider === 'openai' ? 'OpenAI' : 'Anthropic';
+            const envVarName = provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY';
             
             // Check for common API errors
-            if (errorMessage.includes('401') || errorMessage.includes('Unauthorized') || errorMessage.includes('authentication') || errorMessage.includes('Invalid API key')) {
-                errorMessage = 'Invalid API key. Please check your API key in Settings.';
+            if (errorLower.includes('401') || errorLower.includes('unauthorized') || errorLower.includes('authentication') || errorLower.includes('invalid api key')) {
+                errorMessage = isAdminMode
+                    ? `Invalid ${keyName} API key. The ${envVarName} environment variable in Netlify may be incorrect or expired. Please check your API key in Netlify project settings.`
+                    : `Invalid ${keyName} API key. Please check your ${keyName} API key in Settings.`;
                 statusCode = 401;
-            } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
+            } else if (errorLower.includes('not found') || errorLower.includes('404') || errorLower.includes('model not found')) {
+                errorMessage = isAdminMode
+                    ? `API key or model not found. The ${envVarName} environment variable may be invalid, or the model may not be available. Please verify your ${keyName} API key in Netlify project settings.`
+                    : `API key or model not found. Please verify your ${keyName} API key is correct in Settings.`;
+                statusCode = 404;
+            } else if (errorLower.includes('429') || errorLower.includes('rate limit')) {
                 errorMessage = 'Rate limit exceeded. Please try again later.';
                 statusCode = 429;
-            } else if (errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT')) {
+            } else if (errorLower.includes('timeout') || errorLower.includes('etimedout')) {
                 errorMessage = 'Request timed out. Please try again.';
                 statusCode = 504;
-            } else if (errorMessage.includes('ENOTFOUND') || errorMessage.includes('network')) {
+            } else if (errorLower.includes('enotfound') || errorLower.includes('network')) {
                 errorMessage = 'Network error. Please check your internet connection.';
                 statusCode = 503;
             }
@@ -549,9 +596,14 @@ export async function POST(req: Request) {
             stack: error instanceof Error ? error.stack : undefined
         });
         
+        // Determine which API key field is invalid based on provider
+        const invalidKey = provider === 'openai' ? 'openaiKey' : 'anthropicKey';
+        
         return new Response(
             JSON.stringify({ 
                 error: `AI Error: ${errorMessage}`,
+                invalidKey: (statusCode === 401 || statusCode === 404) ? invalidKey : undefined,
+                provider: provider,
                 details: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : String(error)) : undefined
             }),
             { 
