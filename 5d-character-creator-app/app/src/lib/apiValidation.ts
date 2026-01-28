@@ -189,7 +189,7 @@ export function parseEntityMentions(content: string): Array<{ name: string; id?:
 
     // Match markdown-style mentions: [@Name](type:id)
     const markdownPattern = /\[@([^\]]+)\]\((character|world|project):([#@$][A-Z0-9_]+)\)/g;
-    let match;
+    let match: RegExpExecArray | null = null;
 
     while ((match = markdownPattern.exec(content)) !== null) {
         mentions.push({
@@ -201,11 +201,12 @@ export function parseEntityMentions(content: string): Array<{ name: string; id?:
 
     // Match plain @ mentions: @EntityName (for stub creation)
     const plainPattern = /@([A-Za-z0-9_]+)/g;
+    match = null;
     while ((match = plainPattern.exec(content)) !== null) {
         // Only add if not already captured in markdown format
-        if (!mentions.some(m => m.name === match[1])) {
+        if (!mentions.some(m => m.name === match![1])) {
             mentions.push({
-                name: match[1]
+                name: match![1]
             });
         }
     }
