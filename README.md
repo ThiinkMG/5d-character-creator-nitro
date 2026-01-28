@@ -128,6 +128,19 @@ See `scripts/README.md` for more details.
 
 ---
 
+## 📚 Documentation
+
+Project documentation is organized in the `docs/` folder:
+
+- **Testing**: `docs/testing/` - Test plans, checklists, and testing guides
+- **Deployment**: `docs/deployment/` - Deployment configuration guides
+- **Development**: `docs/development/` - Development guides and technical docs
+- **App Docs**: `5d-character-creator-app/docs/` - Application-specific documentation
+
+See `docs/README.md` for a complete overview.
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
