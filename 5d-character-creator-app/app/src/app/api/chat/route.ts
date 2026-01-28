@@ -276,6 +276,10 @@ export async function OPTIONS() {
 }
 
 export async function POST(req: Request) {
+    // Extract provider and isAdminMode early so they're available in catch block
+    let provider: string = 'anthropic';
+    let isAdminMode: boolean = false;
+    
     try {
         // Parse request body with error handling
         let body;
@@ -297,9 +301,9 @@ export async function POST(req: Request) {
 
         const {
             messages,
-            provider = 'anthropic',
+            provider: bodyProvider = 'anthropic',
             apiKey,
-            isAdminMode = false, // Flag indicating if admin mode is active
+            isAdminMode: bodyIsAdminMode = false, // Flag indicating if admin mode is active
             // Structured context (optional - improves context budget management)
             linkedCharacter,
             linkedWorld,
@@ -307,6 +311,10 @@ export async function POST(req: Request) {
             modeInstruction,
             sessionSetup
         } = body;
+        
+        // Assign to outer scope variables
+        provider = bodyProvider;
+        isAdminMode = bodyIsAdminMode;
 
         // Validate messages array
         if (!messages || !Array.isArray(messages) || messages.length === 0) {
