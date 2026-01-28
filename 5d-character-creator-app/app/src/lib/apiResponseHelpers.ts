@@ -10,7 +10,7 @@ import type { World } from '@/types/world';
 import type { Project } from '@/types/project';
 import type { CanonicalFact } from '@/types/character';
 
-type Entity = Character | World | Project;
+export type Entity = Character | World | Project;
 
 export interface EntityReference {
     name: string;
