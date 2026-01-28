@@ -69,13 +69,33 @@ export function Sidebar() {
                     )}
                 >
                     <div className="relative shrink-0">
-                        <Image
-                            src="/app-image-assets/5d-logo-solo.png"
-                            alt="5D"
-                            width={36}
-                            height={36}
-                            className="rounded-xl"
-                        />
+                        <div className="relative w-9 h-9 rounded-xl overflow-hidden bg-gradient-to-br from-primary/20 to-primary/10 border border-primary/30 flex items-center justify-center group">
+                            <Image
+                                src="/app-image-assets/5d-logo-solo.png"
+                                alt="5D"
+                                width={36}
+                                height={36}
+                                className="rounded-xl object-contain relative z-10 transition-all duration-300 group-hover:scale-105"
+                                style={{ 
+                                    objectPosition: 'center',
+                                    filter: 'brightness(1.15) contrast(1.1) drop-shadow(0 0 8px rgba(255, 140, 0, 0.3))',
+                                }}
+                            />
+                            {/* Moon glow effect - radial gradient to highlight moon as central focus */}
+                            <div 
+                                className="absolute inset-0 rounded-xl pointer-events-none opacity-60 group-hover:opacity-80 transition-opacity"
+                                style={{
+                                    background: 'radial-gradient(circle at center, rgba(255, 140, 0, 0.2) 0%, rgba(255, 140, 0, 0.1) 30%, transparent 70%)',
+                                }}
+                            />
+                            {/* Additional moon highlight ring */}
+                            <div 
+                                className="absolute inset-0 rounded-xl pointer-events-none opacity-40"
+                                style={{
+                                    background: 'radial-gradient(circle at center, transparent 35%, rgba(255, 140, 0, 0.15) 40%, transparent 45%)',
+                                }}
+                            />
+                        </div>
                     </div>
                     <div className={cn(
                         "flex flex-col whitespace-nowrap transition-all duration-300",

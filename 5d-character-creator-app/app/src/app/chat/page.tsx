@@ -2317,6 +2317,8 @@ What would you like to create today?`,
         let contextPrefix = '';
         if (context) {
             const parts: string[] = [];
+            // Use user's name from profile if available, otherwise use "User"
+            const userName = userProfile?.name || 'User';
             if (context.questionText) {
                 parts.push(`Question: "${context.questionText}"`);
             }
@@ -2324,7 +2326,7 @@ What would you like to create today?`,
                 parts.push(`Available options were: ${context.allOptions.join(' | ')}`);
             }
             if (parts.length > 0) {
-                contextPrefix = `[USER SELECTED from options - ${parts.join('. ')}]\n`;
+                contextPrefix = `[${userName.toUpperCase()} SELECTED from options - ${parts.join('. ')}]\n`;
             }
         }
 
