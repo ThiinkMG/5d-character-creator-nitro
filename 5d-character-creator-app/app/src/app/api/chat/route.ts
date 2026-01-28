@@ -354,17 +354,27 @@ export async function POST(req: Request) {
                 finalApiKey = adminKey;
                 console.log('[Admin Mode] Using server-side API key from environment variables');
             } else {
-                console.warn('[Admin Mode] Admin mode active but environment variable not set, falling back to client-provided key');
+                const missingEnvVar = provider === 'openai' 
+                    ? 'OPENAI_API_KEY' 
+                    : 'ANTHROPIC_API_KEY';
+                console.warn(`[Admin Mode] Admin mode active but ${missingEnvVar} environment variable not set, falling back to client-provided key`);
                 // Fall back to client-provided key if env var is not set
             }
         }
 
         if (!finalApiKey || finalApiKey.trim().length === 0) {
+            // Determine which environment variable is missing based on provider
+            const missingEnvVar = provider === 'openai' 
+                ? 'OPENAI_API_KEY' 
+                : 'ANTHROPIC_API_KEY';
+            
+            const errorMessage = isAdminMode 
+                ? `Admin mode is active but ${missingEnvVar} is not configured in environment variables. Please add ${missingEnvVar} in your Netlify project settings (Site settings > Environment variables). After adding the variable, redeploy your site for the changes to take effect.`
+                : 'API key is required. Please add your API key in Settings.';
+            
             return new Response(
                 JSON.stringify({ 
-                    error: isAdminMode 
-                        ? 'Admin mode is active but API keys are not configured in environment variables. Please set ANTHROPIC_API_KEY or OPENAI_API_KEY in your deployment environment.'
-                        : 'API key is required. Please add your API key in Settings.'
+                    error: errorMessage
                 }),
                 { 
                     status: 400, 

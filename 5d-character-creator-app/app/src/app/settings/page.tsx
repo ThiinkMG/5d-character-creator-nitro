@@ -176,6 +176,22 @@ export default function SettingsPage() {
                         }
                     }
                 }, 800);
+            } else if (response.ok && data.error && data.keys) {
+                // Password is correct but API keys are not configured
+                const availableKeys = data.availableKeys || {};
+                const keyStatus = [];
+                if (availableKeys.anthropic) keyStatus.push('Anthropic');
+                if (availableKeys.openai) keyStatus.push('OpenAI');
+                if (availableKeys.gemini) keyStatus.push('Gemini');
+                
+                const keyStatusText = keyStatus.length > 0 
+                    ? ` Available keys: ${keyStatus.join(', ')}.`
+                    : ' No API keys are currently configured.';
+                
+                setAdminError(
+                    data.error + keyStatusText + 
+                    ' Go to Netlify Dashboard > Site settings > Environment variables to add them.'
+                );
             } else {
                 setAdminError(data.error || 'Invalid password');
             }

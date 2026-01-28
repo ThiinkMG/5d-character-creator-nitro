@@ -32,9 +32,29 @@ export async function POST(req: NextRequest) {
                 geminiKey: process.env.GEMINI_API_KEY || '',
             };
 
+            // Check if any API keys are configured
+            const hasAnyKeys = envKeys.anthropicKey || envKeys.openaiKey || envKeys.geminiKey;
+            
+            if (!hasAnyKeys) {
+                return NextResponse.json({ 
+                    error: 'API keys are not configured in environment variables. Please add ANTHROPIC_API_KEY, OPENAI_API_KEY, and/or GEMINI_API_KEY in your Netlify project settings (Site settings > Environment variables).',
+                    keys: envKeys,
+                    availableKeys: {
+                        anthropic: !!envKeys.anthropicKey,
+                        openai: !!envKeys.openaiKey,
+                        gemini: !!envKeys.geminiKey,
+                    }
+                }, { status: 200 }); // Return 200 but with error message so frontend can handle it
+            }
+
             return NextResponse.json({ 
                 success: true,
-                keys: envKeys
+                keys: envKeys,
+                availableKeys: {
+                    anthropic: !!envKeys.anthropicKey,
+                    openai: !!envKeys.openaiKey,
+                    gemini: !!envKeys.geminiKey,
+                }
             });
         } else {
             return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
