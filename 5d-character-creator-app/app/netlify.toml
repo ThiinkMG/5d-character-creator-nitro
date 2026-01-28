@@ -6,7 +6,9 @@
   package = "@netlify/plugin-nextjs"
 
 [build.environment]
-  NODE_VERSION = "20.9.0"
+  NODE_VERSION = "22"
+  # Disable Next.js telemetry for cleaner builds
+  NEXT_TELEMETRY_DISABLED = "1"
 
 # Development server configuration
 [dev]
