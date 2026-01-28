@@ -44,11 +44,16 @@ export default function SettingsPage() {
     const [adminPassword, setAdminPassword] = useState('');
     const [adminError, setAdminError] = useState<string | null>(null);
     const [adminLoading, setAdminLoading] = useState(false);
+    const [showAvatarsInChat, setShowAvatarsInChat] = useState(true);
 
     // Load config from localStorage on mount
     useEffect(() => {
         const savedConfig = localStorage.getItem('5d-api-config');
         const adminMode = localStorage.getItem('5d-admin-mode') === 'true';
+        const avatarPref = localStorage.getItem('5d-show-avatars-in-chat');
+        if (avatarPref !== null) {
+            setShowAvatarsInChat(avatarPref === 'true');
+        }
         
         if (adminMode && savedConfig) {
             // Admin mode is active - restore state but keys are masked
@@ -674,6 +679,42 @@ export default function SettingsPage() {
                                     </div>
                                 )}
                             </div>
+                        </div>
+                    </div>
+                </section>
+
+                {/* Chat Display Settings */}
+                <section>
+                    <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-4">
+                        Chat Display
+                    </h2>
+                    <div className="glass-card rounded-xl p-5">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 rounded-lg bg-primary/10">
+                                    <ImageIcon className="h-4 w-4 text-primary" />
+                                </div>
+                                <div>
+                                    <h3 className="font-medium text-sm">Show Avatars in Chat</h3>
+                                    <p className="text-xs text-muted-foreground">Display user and assistant avatars in chat messages</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    const newValue = !showAvatarsInChat;
+                                    setShowAvatarsInChat(newValue);
+                                    localStorage.setItem('5d-show-avatars-in-chat', String(newValue));
+                                }}
+                                className={cn(
+                                    "relative w-12 h-6 rounded-full transition-colors duration-200",
+                                    showAvatarsInChat ? "bg-primary" : "bg-white/10"
+                                )}
+                            >
+                                <div className={cn(
+                                    "absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform duration-200",
+                                    showAvatarsInChat && "translate-x-6"
+                                )} />
+                            </button>
                         </div>
                     </div>
                 </section>

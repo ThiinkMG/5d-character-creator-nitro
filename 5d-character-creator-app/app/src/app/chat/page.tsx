@@ -34,6 +34,7 @@ import { SaveDocumentOptionModal } from '@/components/chat/SaveDocumentOptionMod
 import { SaveProjectDocumentModal } from '@/components/project/SaveProjectDocumentModal';
 import { ProjectDocumentType } from '@/types/document';
 import { fuzzyMatchByName, findBestMatch } from '@/lib/fuzzy-match';
+import { UserNameSetupModal } from '@/components/profile/UserNameSetupModal';
 import { createDocumentFromSession, sessionToDocumentContent, generateDocumentTitle } from '@/lib/document-utils';
 import { History } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
@@ -416,20 +417,20 @@ function ChatContent() {
         {
             id: 'welcome',
             role: 'assistant',
-            content: `Welcome to 5D Character Creator! ðŸŽ­
+            content: `Welcome to 5D Character Creator! 🎭
 
 I'm your AI partner for building deep, psychologically rich characters.
 
 **Quick Commands:**
-â€¢ \`/generate basic\` â€” Quick 5-7 question character
-â€¢ \`/generate advanced\` â€” Full 5-phase development
-â€¢ \`/worldbio\` â€” Create a world setting
-â€¢ \`/menu\` â€” See all commands
+• \`/generate basic\` â€” Quick 5-7 question character
+• \`/generate advanced\` â€” Full 5-phase development
+• \`/worldbio\` â€” Create a world setting
+• \`/menu\` â€” See all commands
 
 What would you like to create today?`,
             choices: [
-                { id: 'basic', label: 'ðŸŽ­ Create Character', description: 'Quick 5-7 questions' },
-                { id: 'world', label: 'ðŸŒ Build World', description: 'Create a setting' },
+                { id: 'basic', label: '🎭 Create Character', description: 'Quick 5-7 questions' },
+                { id: 'world', label: '🌍 Build World', description: 'Create a setting' },
                 { id: 'menu', label: 'ðŸ“‹ See Commands', description: 'View all options' },
             ],
         },
@@ -442,6 +443,9 @@ What would you like to create today?`,
     const [showQuickActions, setShowQuickActions] = useState(true);
     const [showCommandTutorial, setShowCommandTutorial] = useState(false);
     const [activePersona, setActivePersona] = useState<string | null>(null);
+    const [showUserNameSetup, setShowUserNameSetup] = useState(false);
+    const [userProfile, setUserProfile] = useState<{ name: string; avatar: string } | null>(null);
+    const [showAvatarsInChat, setShowAvatarsInChat] = useState(true);
 
     const [apiConfig, setApiConfig] = useState<{
         provider: string;
@@ -571,6 +575,36 @@ What would you like to create today?`,
     useEffect(() => {
         const config = getApiConfig();
         setApiConfig(config);
+        
+        // Load user profile
+        const savedProfile = localStorage.getItem('5d-user-profile');
+        if (savedProfile) {
+            try {
+                const parsed = JSON.parse(savedProfile);
+                setUserProfile({
+                    name: parsed.name || '',
+                    avatar: parsed.avatar || '/app-image-assets/5d-logo-solo.png',
+                });
+            } catch (e) {
+                console.error('Failed to parse user profile:', e);
+            }
+        }
+        
+        // Check if name setup is needed (show modal if no name set)
+        const profile = savedProfile ? JSON.parse(savedProfile) : null;
+        if (!profile || !profile.name) {
+            // Check if user has dismissed the modal before
+            const dismissed = localStorage.getItem('5d-user-name-setup-dismissed');
+            if (!dismissed) {
+                setShowUserNameSetup(true);
+            }
+        }
+        
+        // Load avatar display preference
+        const avatarPref = localStorage.getItem('5d-show-avatars-in-chat');
+        if (avatarPref !== null) {
+            setShowAvatarsInChat(avatarPref === 'true');
+        }
     }, []);
 
     // Get current API key using utility (checks admin keys first)
@@ -846,20 +880,20 @@ Click **Generate** to create the document, or provide specific instructions for 
             {
                 id: 'welcome',
                 role: 'assistant',
-                content: `Welcome to 5D Character Creator! ðŸŽ­
+                content: `Welcome to 5D Character Creator! 🎭
 
 I'm your AI partner for building deep, psychologically rich characters.
 
 **Quick Commands:**
-â€¢ \`/generate basic\` â€” Quick 5-7 question character
-â€¢ \`/generate advanced\` â€” Full 5-phase development
-â€¢ \`/worldbio\` â€” Create a world setting
-â€¢ \`/menu\` â€” See all commands
+• \`/generate basic\` â€” Quick 5-7 question character
+• \`/generate advanced\` â€” Full 5-phase development
+• \`/worldbio\` â€” Create a world setting
+• \`/menu\` â€” See all commands
 
 What would you like to create today?`,
                 choices: [
-                    { id: 'basic', label: 'ðŸŽ­ Create Character', description: 'Quick 5-7 questions' },
-                    { id: 'world', label: 'ðŸŒ Build World', description: 'Create a setting' },
+                    { id: 'basic', label: '🎭 Create Character', description: 'Quick 5-7 questions' },
+                    { id: 'world', label: '🌍 Build World', description: 'Create a setting' },
                     { id: 'menu', label: 'ðŸ“‹ See Commands', description: 'View all options' },
                 ],
             },
@@ -1638,8 +1672,8 @@ What would you like to create today?`,
                     role: 'assistant',
                     content: `*${char.name} looks at you.* \n\n"Hello. What brings you to me?"`,
                     choices: [
-                        { id: 'talk', label: 'ðŸ—£ï¸ Talk Directly', description: 'Interview the character' },
-                        { id: 'scene', label: 'ðŸŽ¬ Generate Scene', description: 'Put them in a situation' }
+                        { id: 'talk', label: '💬 Talk Directly', description: 'Interview the character' },
+                        { id: 'scene', label: '🎬 Generate Scene', description: 'Put them in a situation' }
                     ]
                 }]);
                 return;
@@ -1694,7 +1728,7 @@ What would you like to create today?`,
                     role: 'assistant',
                     content: `ðŸ“ **Workshop: ${focus?.charAt(0).toUpperCase() + focus!.slice(1)}**\n\n${focusPrompt}`,
                     choices: [
-                        { id: 'brainstorm', label: 'ðŸ§  Brainstorm Ideas', description: 'Generate concepts' },
+                        { id: 'brainstorm', label: '🧠  Brainstorm Ideas', description: 'Generate concepts' },
                         { id: 'critique', label: 'ðŸ” Critique Current', description: 'Analyze existing data' }
                     ]
                 }]);
@@ -2388,11 +2422,11 @@ What would you like to create today?`,
                     if (line.startsWith('# ')) {
                         return <h1 key={i} className="font-bold text-foreground mt-4 mb-2 text-xl">{line.slice(2)}</h1>;
                     }
-                    if (line.startsWith('â€¢ ') || line.startsWith('- ') || line.startsWith('* ')) {
+                    if (line.startsWith('• ') || line.startsWith('- ') || line.startsWith('* ')) {
                         const text = line.slice(2);
                         return (
                             <div key={i} className="flex items-start gap-2 py-1">
-                                <span className="text-primary mt-0.5">â€¢</span>
+                                <span className="text-primary mt-0.5">•</span>
                                 <span className="text-muted-foreground">{renderInlineCode(text)}</span>
                             </div>
                         );
@@ -2806,14 +2840,37 @@ What would you like to create today?`,
             <div className="flex-1 overflow-y-auto px-6 py-8">
                 <div className="max-w-3xl mx-auto space-y-6">
                     {messages.map((message, index) => (
-                        <div key={message.id} className={cn("animate-fade-in", message.role === 'user' ? 'flex justify-end' : 'flex justify-start')} style={{ animationDelay: `${index * 50}ms` }}>
-                            <div className={cn("max-w-[85%] rounded-2xl px-5 py-4", message.role === 'user' ? "message-user" : "message-assistant")}>
+                        <div key={message.id} className={cn("animate-fade-in flex items-start gap-3", message.role === 'user' ? 'flex-row-reverse justify-end' : 'flex-row justify-start')} style={{ animationDelay: `${index * 50}ms` }}>
+                            {/* Avatar */}
+                            {showAvatarsInChat && (
+                                <div className={cn("shrink-0", message.role === 'user' ? 'order-2' : 'order-1')}>
+                                    {message.role === 'user' ? (
+                                        <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-primary/30 bg-white/5">
+                                            <img
+                                                src={userProfile?.avatar || '/app-image-assets/5d-logo-solo.png'}
+                                                alt={userProfile?.name || 'User'}
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).src = '/app-image-assets/5d-logo-solo.png';
+                                                }}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
+                                            <Sparkles className="w-4 h-4 text-white" />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            <div className={cn("max-w-[85%] rounded-2xl px-5 py-4", message.role === 'user' ? "message-user" : "message-assistant", showAvatarsInChat && (message.role === 'user' ? 'order-1' : 'order-2'))}>
                                 {message.role === 'assistant' && (
                                     <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/5">
-                                        <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
-                                            <Sparkles className="w-3.5 h-3.5 text-white" />
-                                        </div>
                                         <span className="text-xs font-medium text-foreground">5D Creator</span>
+                                    </div>
+                                )}
+                                {message.role === 'user' && userProfile?.name && (
+                                    <div className="flex items-center gap-2 mb-2 pb-2 border-b border-white/5">
+                                        <span className="text-xs font-medium text-foreground">{userProfile.name}</span>
                                     </div>
                                 )}
                                 <div className="text-sm leading-relaxed">{renderMessage(message)}</div>
@@ -3457,6 +3514,21 @@ Extract and format the ${docType === 'script' ? 'script' : 'roleplay'} content:`
                     />
                 );
             })()}
+
+            {/* User Name Setup Modal */}
+            <UserNameSetupModal
+                isOpen={showUserNameSetup}
+                onClose={() => {
+                    setShowUserNameSetup(false);
+                    localStorage.setItem('5d-user-name-setup-dismissed', 'true');
+                }}
+                onSave={(name) => {
+                    const profile = { name, avatar: userProfile?.avatar || '/app-image-assets/5d-logo-solo.png', description: '' };
+                    localStorage.setItem('5d-user-profile', JSON.stringify(profile));
+                    setUserProfile({ name, avatar: profile.avatar });
+                    setShowUserNameSetup(false);
+                }}
+            />
         </div >
     );
 }
