@@ -15,7 +15,7 @@
 
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
-import { streamText, generateText } from 'ai';
+import { streamText, generateText, type ModelMessage } from 'ai';
 import {
     buildContextSections,
     composeContext,
@@ -38,7 +38,9 @@ import {
     enrichResponseWithLinks,
     detectCanonicalFactUpdates,
     formatEntityReferencesSummary,
-    type Entity
+    type Entity,
+    type EntityReference,
+    type DetectedFact
 } from '@/lib/apiResponseHelpers';
 
 // Allow streaming responses up to 60 seconds
@@ -445,10 +447,26 @@ export async function POST(req: Request) {
 
         const finalSystemPrompt = composedContext.content;
 
-        // Prepend system prompt to messages
-        const coreMessages = [
+        // Prepend system prompt to messages, ensuring proper ModelMessage types
+        const coreMessages: ModelMessage[] = [
             { role: 'system', content: finalSystemPrompt },
-            ...messages
+            ...messages.map((msg: any): ModelMessage => {
+                if (msg.role === 'tool') {
+                    return { role: 'tool', content: msg.content };
+                }
+
+                const role: ModelMessage['role'] =
+                    msg.role === 'assistant'
+                        ? 'assistant'
+                        : msg.role === 'system'
+                            ? 'system'
+                            : 'user';
+
+                return {
+                    role,
+                    content: msg.content
+                };
+            })
         ];
 
         // Generate text (non-streaming for Phase 1)
@@ -460,7 +478,7 @@ export async function POST(req: Request) {
             tokenBudget
         });
 
-        let text;
+        let text: string;
         try {
             const result = await generateText({
                 model,
@@ -476,8 +494,8 @@ export async function POST(req: Request) {
 
         // Phase 1: Enrich response with entity references
         let enrichedText = text;
-        let entityReferences = [];
-        let detectedFacts = [];
+        let entityReferences: EntityReference[] = [];
+        let detectedFacts: DetectedFact[] = [];
 
         if (body.entities && Array.isArray(body.entities)) {
             const entities = body.entities as Entity[];
