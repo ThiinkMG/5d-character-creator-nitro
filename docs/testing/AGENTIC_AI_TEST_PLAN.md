@@ -1,9 +1,15 @@
 # 5D Character Creator - Agentic AI Test Plan
 ## Comprehensive Testing Guide for AI Agents
 
-**Version:** V6 Master  
-**Date Created:** January 25, 2026  
+**Version:** V6 Master (Phase 1 Complete)
+**Date Created:** January 25, 2026
+**Last Updated:** January 28, 2026
 **Purpose:** Step-by-step testing instructions for agentic AI to assess workflows, functionality, bugs, and suggest enhancements
+
+**Phase 1 Features Included:**
+- Week 2: @ Mention System
+- Week 3: Context Sidecar
+- Week 4: Context Injection System
 
 ---
 
@@ -12,6 +18,9 @@
 1. [Test Environment Setup](#test-environment-setup)
 2. [Application Overview](#application-overview)
 3. [Section-by-Section Test Plan](#section-by-section-test-plan)
+   - Section 3.11: Context Sidecar (Week 3)
+   - Section 3.12: Context Injection System (Week 4)
+   - Section 3.13: @ Mention System (Week 2)
 4. [Feature Testing Checklist](#feature-testing-checklist)
 5. [Workflow Assessment Criteria](#workflow-assessment-criteria)
 6. [Bug Reporting Template](#bug-reporting-template)
@@ -522,6 +531,120 @@ Test various chat commands:
 
 ---
 
+#### Test 3.11: Context Sidecar (Week 3 Feature)
+**Steps:**
+1. Navigate to `/chat`
+2. Test keyboard shortcut `Ctrl+Shift+C` to toggle Context Sidecar
+3. Link a character or world to the chat session
+4. Observe the Context Sidecar panel (right side on desktop, bottom sheet on mobile)
+5. Test pinning/unpinning entities:
+   - Click pin icon on an entity card
+   - Verify toast notification appears
+   - Check entity persists in sidecar
+6. Test auto-detection:
+   - Type a message mentioning a character name
+   - Verify suggested entity appears
+7. Test entity context cards:
+   - Expand an entity card
+   - Verify key fields are displayed (name, role, concept)
+8. Test mobile behavior (resize browser to mobile width):
+   - Verify bottom sheet appears instead of sidebar
+   - Test drag-to-expand functionality
+
+**Expected Results:**
+- Keyboard shortcut toggles sidecar visibility
+- Entities can be pinned/unpinned
+- Toast notifications confirm pin/unpin actions
+- Auto-detection suggests relevant entities
+- Entity cards display useful context
+- Mobile bottom sheet works correctly
+- Pinned entities persist across messages
+
+**Assessment Points:**
+- [ ] Keyboard shortcut works (Ctrl+Shift+C)
+- [ ] Pin/unpin functionality works
+- [ ] Toast notifications appear
+- [ ] Auto-detection is accurate
+- [ ] Entity cards are informative
+- [ ] Mobile bottom sheet is functional
+- [ ] Sidecar persists pinned state
+
+---
+
+#### Test 3.12: Context Injection System (Week 4 Feature)
+**Steps:**
+1. Enable Dev Mode: Open browser console, run `localStorage.setItem('5d-admin-mode', 'true')` and refresh
+2. Navigate to `/chat` and start a chat session
+3. Link at least one character and one world
+4. Open Dev Mode Panel (gear icon in chat header)
+5. Click the "Context" tab
+6. Test mode-specific context filtering:
+   - Switch to "Character Creator" mode
+   - Verify character fields have higher priority (70% budget)
+   - Switch to "World Builder" mode
+   - Verify world fields have higher priority (70% budget)
+7. Examine token budget display:
+   - Check total tokens used
+   - Check budget allocation per entity type
+   - Verify fields are prioritized correctly
+8. Test priority-based field inclusion:
+   - Create character with many fields populated
+   - Set tight token budget
+   - Verify high-priority fields included, low-priority truncated
+9. Test Debug Panel sections:
+   - Summary (mode, token count, budget utilization)
+   - Entities Included (list by type)
+   - Fields Per Entity (which fields selected)
+   - Truncated Fields (if any)
+   - Full Context Text (raw markdown)
+   - Budget Allocation (visual breakdown)
+
+**Expected Results:**
+- Dev Mode Panel only visible when admin mode enabled
+- Context tab shows injection details
+- Token budget is respected
+- High-priority fields always included
+- Mode switching changes field priorities
+- Debug information is accurate and helpful
+
+**Assessment Points:**
+- [ ] Dev Mode Panel accessible (admin only)
+- [ ] Context tab displays correctly
+- [ ] Mode-specific filtering works
+- [ ] Token budget is enforced
+- [ ] Priority system works correctly
+- [ ] Debug information is accurate
+- [ ] No performance lag with context injection
+
+---
+
+#### Test 3.13: @ Mention System (Week 2 Feature)
+**Steps:**
+1. In chat input, type `@` character
+2. Observe mention popup appears
+3. Type partial character/world/project name
+4. Verify fuzzy search filters results
+5. Select an entity from popup
+6. Verify entity is inserted with `@EntityName` format
+7. Test multiple mentions in one message
+8. Verify mentioned entities are auto-linked to context
+
+**Expected Results:**
+- `@` triggers mention popup
+- Fuzzy search works
+- Entity selection inserts mention
+- Multiple mentions supported
+- Mentioned entities added to context
+
+**Assessment Points:**
+- [ ] Mention popup triggers on `@`
+- [ ] Fuzzy search is accurate
+- [ ] Entity selection works
+- [ ] Multiple mentions work
+- [ ] Context linking automatic
+
+---
+
 ### SECTION 4: World Building
 
 #### Test 4.1: World Gallery
@@ -894,6 +1017,32 @@ Test various chat commands:
 - [ ] JSON save blocks
 - [ ] Command system
 - [ ] Context management
+
+### Context Sidecar (Week 3)
+- [ ] Keyboard shortcut (Ctrl+Shift+C)
+- [ ] Pin/unpin entities
+- [ ] Toast notifications
+- [ ] Auto-detection of entities in text
+- [ ] Entity context cards display
+- [ ] Mobile bottom sheet behavior
+- [ ] Sidecar state persistence
+
+### Context Injection System (Week 4)
+- [ ] Dev Mode Panel (admin only)
+- [ ] Context tab in Dev Mode Panel
+- [ ] Mode-specific field filtering
+- [ ] Token budget enforcement
+- [ ] Priority-based field inclusion
+- [ ] Truncated fields display
+- [ ] Budget allocation visualization
+- [ ] Performance (context assembly < 200ms)
+
+### @ Mention System (Week 2)
+- [ ] Mention popup on `@`
+- [ ] Fuzzy search filtering
+- [ ] Entity selection and insertion
+- [ ] Multiple mentions support
+- [ ] Auto-linking mentioned entities
 
 ### Entity Management
 - [ ] Character-World linking
@@ -1294,6 +1443,8 @@ After completing all tests, provide:
 3. AI chat interface and basic modes
 4. Data persistence
 5. Entity linking
+6. **Context Sidecar (Week 3)** - Pin/unpin entities, keyboard shortcut
+7. **@ Mention System (Week 2)** - Mention popup, entity linking
 
 ### Phase 2: Core Features (Should Complete)
 1. World building
@@ -1301,6 +1452,7 @@ After completing all tests, provide:
 3. Document system
 4. Export functionality
 5. Settings and configuration
+6. **Context Injection (Week 4)** - Mode-specific filtering, token budget
 
 ### Phase 3: Advanced Features (Nice to Complete)
 1. Analysis tools
@@ -1308,6 +1460,7 @@ After completing all tests, provide:
 3. History/sessions
 4. Advanced chat modes
 5. Custom sections
+6. Dev Mode Panel debugging
 
 ### Phase 4: Polish & Edge Cases (If Time Permits)
 1. Error handling
@@ -1315,6 +1468,7 @@ After completing all tests, provide:
 3. Performance optimization
 4. Accessibility
 5. Cross-browser testing
+6. Mobile responsiveness (Context Sidecar bottom sheet)
 
 ---
 

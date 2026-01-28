@@ -20,7 +20,7 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
-      "@/templates/*": ["../app-page-idea-templates/*"]
+      "@/templates/*": ["./src/templates/*"]
     }
   },
   "include": [

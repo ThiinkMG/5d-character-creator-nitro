@@ -1,7 +1,10 @@
 # 5D Character Creator - Quick Test Checklist
 ## Quick Reference for Agentic AI Testers
 
+**Version:** Phase 1 Complete (Updated January 28, 2026)
 **Use this alongside the main test plan for quick tracking**
+
+**Includes Phase 1 Features:** @ Mention System, Context Sidecar, Context Injection
 
 ---
 
@@ -43,6 +46,20 @@
 - [ ] Project manager mode works
 - [ ] Workshop mode works
 - [ ] Chat commands work
+
+### Section 3.5: Context Features (Phase 1 Weeks 2-4)
+- [ ] @ Mention popup appears on `@`
+- [ ] Fuzzy search in mention popup
+- [ ] Entity insertion from mention popup
+- [ ] Context Sidecar toggle (Ctrl+Shift+C)
+- [ ] Pin/unpin entities to sidecar
+- [ ] Toast notifications for pin/unpin
+- [ ] Entity auto-detection in text
+- [ ] Mobile bottom sheet works
+- [ ] Dev Mode Panel (admin only)
+- [ ] Context tab shows injection details
+- [ ] Mode-specific field filtering
+- [ ] Token budget enforcement
 
 ### Section 4: World Building
 - [ ] World gallery displays
@@ -142,6 +159,8 @@
 - [ ] AI chat interface
 - [ ] Data persistence
 - [ ] Entity linking
+- [ ] @ Mention system (Week 2)
+- [ ] Context Sidecar (Week 3)
 
 ### Should Complete
 - [ ] World building
@@ -149,12 +168,16 @@
 - [ ] Document system
 - [ ] Export functionality
 - [ ] Settings
+- [ ] Context Injection (Week 4)
+- [ ] Dev Mode Panel debugging
 
 ### Nice to Complete
 - [ ] Analysis tools
 - [ ] Image generation
 - [ ] History/sessions
 - [ ] Advanced chat modes
+- [ ] Mobile bottom sheet
+- [ ] Token budget fine-tuning
 
 ---
 
@@ -198,4 +221,4 @@ _Use this space for quick notes during testing:_
 
 ---
 
-**Last Updated:** [Date/Time]
+**Last Updated:** January 28, 2026

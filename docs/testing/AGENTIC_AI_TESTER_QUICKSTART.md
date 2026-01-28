@@ -1,6 +1,9 @@
 # Agentic AI Tester - Quick Start Guide
 ## 5D Character Creator V6 Testing
 
+**Version:** Phase 1 Complete (Updated January 28, 2026)
+**Includes:** @ Mention System, Context Sidecar, Context Injection
+
 ---
 
 ## 🎯 Your Mission
@@ -66,6 +69,12 @@ Open: `http://localhost:3000`
    - [ ] Entity linking works
    - [ ] JSON save blocks work
 
+4. **Context Features (Phase 1 Weeks 2-4)**
+   - [ ] @ Mention popup works (type `@` in chat)
+   - [ ] Context Sidecar toggle (`Ctrl+Shift+C`)
+   - [ ] Pin/unpin entities works
+   - [ ] Entity auto-detection works
+
 **✅ If all pass → Continue to Phase 2**
 
 ---
@@ -84,6 +93,12 @@ Open: `http://localhost:3000`
 3. **Data Management**
    - [ ] Export works
    - [ ] Trash/recovery works
+
+4. **Context Injection (Week 4)**
+   - [ ] Enable Dev Mode: `localStorage.setItem('5d-admin-mode', 'true')`
+   - [ ] Dev Mode Panel appears (gear icon)
+   - [ ] Context tab shows field filtering
+   - [ ] Token budget is enforced
 
 ---
 
@@ -167,6 +182,20 @@ Open: `http://localhost:3000`
 **Test data reliability:**
 - Create content → Refresh page → Verify data still exists → Test export → Test import (if available)
 
+### 5. Context Features (Phase 1 Weeks 2-4)
+**Test @ Mention System (Week 2):**
+- Type `@` → See popup → Search entities → Select → Verify insertion
+
+**Test Context Sidecar (Week 3):**
+- `Ctrl+Shift+C` → Toggle sidecar → Pin entity → See toast → Verify persistence
+
+**Test Context Injection (Week 4):**
+- Enable admin mode → Open Dev Mode Panel → Switch chat modes → Verify field filtering changes → Check token budget
+
+### 6. Mobile Responsiveness
+**Test mobile behavior:**
+- Resize to mobile width → Context Sidecar becomes bottom sheet → Test drag-to-expand
+
 ---
 
 ## 🚨 Critical Issues to Report Immediately
@@ -219,6 +248,10 @@ Open: `http://localhost:3000`
 - [ ] Data Persistence
 - [ ] Performance
 - [ ] Error Handling
+- [ ] @ Mention System
+- [ ] Context Sidecar
+- [ ] Context Injection
+- [ ] Dev Mode Panel
 
 ---
 
@@ -253,6 +286,17 @@ Open: `http://localhost:3000`
 - `/help [command]` - Get help
 - `/progress` - View progress
 - `/save` - Save current state
+
+### Context Features (Phase 1)
+- `@` - Trigger mention popup (type in chat input)
+- `Ctrl+Shift+C` - Toggle Context Sidecar
+- Pin icon - Pin/unpin entity in sidecar
+- Gear icon - Open Dev Mode Panel (admin only)
+
+### Dev Mode (Admin)
+- `localStorage.setItem('5d-admin-mode', 'true')` - Enable Dev Mode
+- `localStorage.removeItem('5d-admin-mode')` - Disable Dev Mode
+- Context tab shows: token budget, field filtering, priority allocation
 
 ---
 
