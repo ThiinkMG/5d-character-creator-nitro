@@ -464,7 +464,7 @@ export async function POST(req: Request) {
         }
 
         // Check if we have images in linkedEntities that need vision support
-        const hasImages = linkedEntities?.userAssets?.some(asset => asset.type === 'image') || false;
+        const hasImages = linkedEntities?.userAssets?.some((asset: NonNullable<LinkedEntities['userAssets']>[number]) => asset.type === 'image') || false;
         
         // Select the model based on provider and whether vision is needed
         let model;
@@ -641,7 +641,7 @@ export async function POST(req: Request) {
             hasApiKey: !!finalApiKey,
             tokenBudget,
             hasImages,
-            imageCount: hasImages ? (linkedEntities?.userAssets?.filter(a => a.type === 'image').length || 0) : 0
+            imageCount: hasImages ? (linkedEntities?.userAssets?.filter((a: NonNullable<LinkedEntities['userAssets']>[number]) => a.type === 'image').length || 0) : 0
         });
         
         let text;
