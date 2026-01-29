@@ -104,10 +104,10 @@ export function ContextSidecar({
                         "hover:bg-[#0A0A0F] hover:border-white/20",
                         "text-white/70 hover:text-white",
                         "transition-all duration-300 ease-in-out",
-                        // Desktop positioning
-                        "md:right-4 md:top-20",
+                        // Desktop positioning - moved down to avoid banner overlap
+                        "md:right-4 md:top-28",
                         // Mobile positioning (bottom right)
-                        "right-4 bottom-24 md:bottom-auto md:top-20",
+                        "right-4 bottom-24 md:bottom-auto md:top-28",
                         // Badge for entity count when closed
                         hasContextEntities && "pr-2"
                     )}

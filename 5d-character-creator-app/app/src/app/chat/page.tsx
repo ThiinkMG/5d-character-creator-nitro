@@ -3220,10 +3220,10 @@ What would you like to create today?`,
                 </div>
             </header >
 
-            {/* Warnings ... */}
+            {/* Warnings - Moved to top to avoid context button overlap */}
             {
                 mounted && !hasApiKey && !dismissApiKeyBanner && typeof window !== 'undefined' && localStorage.getItem('5d-admin-mode') !== 'true' && (
-                    <div className="mx-6 mt-4 p-4 rounded-xl glass-card border-amber-500/20 bg-amber-500/5">
+                    <div className="mx-6 mt-1 mb-1 p-3 rounded-xl glass-card border-amber-500/20 bg-amber-500/5 relative z-30 shrink-0">
                         <div className="flex items-start gap-3">
                             <AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
                             <div className="flex-1">
@@ -3249,7 +3249,7 @@ What would you like to create today?`,
             }
             {
                 error && (
-                    <div className="mx-6 mt-4 p-4 rounded-xl glass-card border-red-500/20 bg-red-500/5">
+                    <div className="mx-6 mt-1 mb-1 p-3 rounded-xl glass-card border-red-500/20 bg-red-500/5 relative z-30 shrink-0">
                         <div className="flex items-start gap-3">
                             <AlertCircle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
                             <div className="flex-1">
