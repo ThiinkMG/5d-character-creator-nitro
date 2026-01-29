@@ -132,7 +132,7 @@ export function createThumbnail(file: File, maxSize: number = 200): Promise<stri
 /**
  * Process uploaded file and create UserAsset
  */
-export async function processUploadedFile(file: File): Promise<Omit<UserAsset, 'id' | 'uploadedAt' | 'updatedAt'>> {
+export async function processUploadedFile(file: File): Promise<Omit<UserAsset, 'id'>> {
     if (!isFileSupported(file)) {
         throw new Error(`File type ${file.type} not supported or file too large`);
     }
@@ -145,7 +145,7 @@ export async function processUploadedFile(file: File): Promise<Omit<UserAsset, '
     const dataUrl = await fileToDataUrl(file);
     const now = new Date();
     
-    const baseAsset: Omit<UserAsset, 'id' | 'uploadedAt' | 'updatedAt'> = {
+    const baseAsset: Omit<UserAsset, 'id'> = {
         name: file.name,
         type,
         mimeType: file.type,

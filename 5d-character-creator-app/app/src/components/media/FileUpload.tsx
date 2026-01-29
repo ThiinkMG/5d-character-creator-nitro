@@ -62,8 +62,6 @@ export function FileUpload({
                 const asset: UserAsset = {
                     ...processed,
                     id: `asset-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                    uploadedAt: new Date(),
-                    updatedAt: new Date(),
                 };
 
                 processedAssets.push(asset);
