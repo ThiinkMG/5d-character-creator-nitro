@@ -41,6 +41,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { DevModePanel, type DevModeLogEntry, type DevModeDebugInfo } from '@/components/chat/DevModePanel';
 import { LogSessionModal } from '@/components/chat/LogSessionModal';
 import { ContextSidecar } from '@/components/chat/ContextSidecar'; // Phase 1 Week 3: Context Sidecar System
+import { ChatAttachments } from '@/components/chat/ChatAttachments'; // File attachments for AI context
 import {
     Dialog,
     DialogContent,
@@ -3474,6 +3475,16 @@ What would you like to create today?`,
                                 </button>
                             ))}
                         </div>
+                    </div>
+
+                    {/* File Attachments */}
+                    <div className="mb-3">
+                        <ChatAttachments 
+                            chatSessionId={activeSessionId} 
+                            onCreateSession={(sessionId) => {
+                                setActiveSessionId(sessionId);
+                            }}
+                        />
                     </div>
 
                     <form onSubmit={handleSubmit} className="flex gap-3 items-end">

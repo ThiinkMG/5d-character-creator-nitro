@@ -13,40 +13,78 @@ import { useStore } from '@/lib/store';
 import { UserAsset } from '@/types/user-asset';
 import { FileUpload } from '@/components/media/FileUpload';
 import { Button } from '@/components/ui/button';
+import { ChatSession } from '@/types/chat';
 
 interface ChatAttachmentsProps {
-    chatSessionId: string;
+    chatSessionId: string | null;
     className?: string;
+    onCreateSession?: (sessionId: string) => void;
 }
 
-export function ChatAttachments({ chatSessionId, className }: ChatAttachmentsProps) {
+export function ChatAttachments({ chatSessionId, className, onCreateSession }: ChatAttachmentsProps) {
     const { 
         getChatSession, 
         getUserAsset, 
         attachAssetToChat, 
         detachAssetFromChat,
         getUserAssets,
-        addUserAsset
+        addUserAsset,
+        addChatSession
     } = useStore();
     
     const [showUpload, setShowUpload] = useState(false);
     
-    const session = getChatSession(chatSessionId);
+    // Create session if it doesn't exist
+    const ensureSession = (): string => {
+        if (chatSessionId) {
+            return chatSessionId;
+        }
+        
+        // Create a new session
+        const newSession: ChatSession = {
+            id: `session-${Date.now()}`,
+            title: 'New Chat',
+            lastMessage: '',
+            updatedAt: new Date(),
+            createdAt: new Date(),
+            messages: [],
+            mode: 'chat',
+            attachments: []
+        };
+        
+        addChatSession(newSession);
+        if (onCreateSession) {
+            onCreateSession(newSession.id);
+        }
+        return newSession.id;
+    };
+    
+    const session = chatSessionId ? getChatSession(chatSessionId) : null;
     const attachedAssetIds = session?.attachments || [];
     const attachedAssets = attachedAssetIds
         .map(id => getUserAsset(id))
         .filter((asset): asset is UserAsset => asset !== undefined);
 
     const handleUpload = (assets: UserAsset[]) => {
+        const sessionId = ensureSession();
         assets.forEach(asset => {
             addUserAsset(asset);
-            attachAssetToChat(chatSessionId, asset.id);
+            attachAssetToChat(sessionId, asset.id);
         });
         setShowUpload(false);
     };
 
     const handleDetach = (assetId: string) => {
+        if (!chatSessionId) return;
         detachAssetFromChat(chatSessionId, assetId);
+    };
+
+    const handleShowUpload = () => {
+        // Ensure session exists before showing upload
+        if (!chatSessionId) {
+            ensureSession();
+        }
+        setShowUpload(true);
     };
 
     if (attachedAssets.length === 0 && !showUpload) {
@@ -55,7 +93,7 @@ export function ChatAttachments({ chatSessionId, className }: ChatAttachmentsPro
                 <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => setShowUpload(true)}
+                    onClick={handleShowUpload}
                     className="text-white/70 hover:text-white"
                 >
                     <Paperclip className="w-4 h-4 mr-2" />
@@ -127,7 +165,7 @@ export function ChatAttachments({ chatSessionId, className }: ChatAttachmentsPro
                 <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => setShowUpload(true)}
+                    onClick={handleShowUpload}
                     className="text-white/70 hover:text-white"
                 >
                     <Plus className="w-4 h-4 mr-2" />
