@@ -131,8 +131,14 @@ export function createThumbnail(file: File, maxSize: number = 200): Promise<stri
 
 /**
  * Process uploaded file and create UserAsset
+ * @param file - File to process
+ * @param options - Optional processing options
+ * @param options.analyzeVision - Whether to trigger vision analysis (client-side only, requires API call)
  */
-export async function processUploadedFile(file: File): Promise<Omit<UserAsset, 'id'>> {
+export async function processUploadedFile(
+    file: File,
+    options?: { analyzeVision?: boolean }
+): Promise<Omit<UserAsset, 'id'>> {
     if (!isFileSupported(file)) {
         throw new Error(`File type ${file.type} not supported or file too large`);
     }

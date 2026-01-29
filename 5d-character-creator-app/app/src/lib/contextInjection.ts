@@ -28,7 +28,30 @@ export interface LinkedEntities {
     characters?: Character[];
     worlds?: World[];
     projects?: Project[];
-    userAssets?: Array<{ id: string; name: string; type: string; extractedText?: string; dataUrl?: string }>; // User uploaded files
+    userAssets?: Array<{ 
+        id: string; 
+        name: string; 
+        type: string; 
+        extractedText?: string; 
+        altText?: string; 
+        description?: string;
+        visionAnalysis?: {
+            description: string;
+            detectedObjects?: string[];
+            sceneDescription?: string;
+            characterDetails?: {
+                appearance: string;
+                clothing: string;
+                pose: string;
+                expression: string;
+            };
+            style?: string;
+            colors?: string[];
+            analyzedAt: Date;
+            provider: 'claude' | 'openai';
+            model: string;
+        };
+    }>; // User uploaded files (metadata only, no dataUrl)
 }
 
 /**
@@ -177,13 +200,56 @@ export function assembleContextForPrompt(
                 assetContext = `### Attached Document: ${asset.name}\n\n${truncatedText}`;
                 totalTokens += estimateTokens(assetContext);
             } else if (asset.type === 'image') {
-                // For images, provide metadata and note that image is available
-                assetContext = `### Attached Image: ${asset.name}\n\n[Image file attached: ${asset.name}. Use this image as reference when generating content.]`;
-                if (asset.dataUrl) {
-                    // Note: In a production system, you might want to use vision API here
-                    // For now, we just note the image is available
-                    assetContext += `\n\nImage data available for analysis.`;
+                // For images, include vision analysis if available, otherwise use metadata
+                assetContext = `### Attached Image: ${asset.name}\n\n`;
+                
+                if (asset.visionAnalysis) {
+                    // Use stored vision analysis (preferred)
+                    const analysis = asset.visionAnalysis;
+                    assetContext += `**Vision Analysis (${analysis.provider} ${analysis.model}):**\n\n`;
+                    assetContext += `${analysis.description}\n\n`;
+                    
+                    if (analysis.sceneDescription) {
+                        assetContext += `**Scene:** ${analysis.sceneDescription}\n\n`;
+                    }
+                    
+                    if (analysis.characterDetails) {
+                        assetContext += `**Character Details:**\n`;
+                        assetContext += `- Appearance: ${analysis.characterDetails.appearance}\n`;
+                        assetContext += `- Clothing: ${analysis.characterDetails.clothing}\n`;
+                        assetContext += `- Pose: ${analysis.characterDetails.pose}\n`;
+                        assetContext += `- Expression: ${analysis.characterDetails.expression}\n\n`;
+                    }
+                    
+                    if (analysis.detectedObjects && analysis.detectedObjects.length > 0) {
+                        assetContext += `**Detected Objects:** ${analysis.detectedObjects.join(', ')}\n\n`;
+                    }
+                    
+                    if (analysis.style) {
+                        assetContext += `**Art Style:** ${analysis.style}\n\n`;
+                    }
+                    
+                    if (analysis.colors && analysis.colors.length > 0) {
+                        assetContext += `**Colors:** ${analysis.colors.join(', ')}\n\n`;
+                    }
+                    
+                    assetContext += `**IMPORTANT:** Use this detailed vision analysis when generating content, describing characters, or creating character profiles. `;
+                    assetContext += `The image has been analyzed and the above description accurately represents its visual content.`;
+                } else {
+                    // Fallback to metadata if no vision analysis
+                    if (asset.altText) {
+                        assetContext += `**Alt Text/Description:** ${asset.altText}\n\n`;
+                    }
+                    if (asset.description) {
+                        assetContext += `**Details:** ${asset.description}\n\n`;
+                    }
+                    assetContext += `**IMPORTANT:** An image file "${asset.name}" has been attached to this conversation. `;
+                    assetContext += `Please use this image as a visual reference when generating content, describing characters, or creating character profiles. `;
+                    assetContext += `If the user asks you to attach this image to a character profile, you should include it in your response. `;
+                    assetContext += `Describe what you see in the image and incorporate those visual details into your character descriptions.`;
+                    assetContext += `\n\n**Note:** Vision analysis is available - consider analyzing this image for more detailed context.`;
                 }
+                
                 totalTokens += estimateTokens(assetContext);
             }
             

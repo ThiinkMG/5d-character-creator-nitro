@@ -316,7 +316,11 @@ export async function POST(req: Request) {
             chatMode,
             linkedEntities, // { characters: [...], worlds: [...], projects: [...] }
             useContextInjection = false, // Enable new context injection system
+            imageDataUrls, // Array of image dataUrls for vision (sent from client)
         } = body;
+        
+        // Store imageDataUrls for use in message processing
+        const attachedImageDataUrls = (imageDataUrls as string[]) || [];
         
         // Assign to outer scope variables
         provider = bodyProvider;
@@ -459,18 +463,30 @@ export async function POST(req: Request) {
             // Don't reject - let the API handle validation
         }
 
-        // Select the model based on provider
+        // Check if we have images in linkedEntities that need vision support
+        const hasImages = linkedEntities?.userAssets?.some(asset => asset.type === 'image') || false;
+        
+        // Select the model based on provider and whether vision is needed
         let model;
+        let modelId: string;
         try {
             if (provider === 'openai') {
                 const openai = createOpenAI({ apiKey: finalApiKey });
-                model = openai('gpt-4o');
+                // Use vision-enabled model if images are present
+                modelId = hasImages ? 'gpt-4o' : 'gpt-4o'; // gpt-4o supports vision
+                model = openai(modelId);
             } else {
                 const anthropic = createAnthropic({ apiKey: finalApiKey });
-                // Using Claude 3.5 Haiku - current version as of October 2024
-                // Model identifier: claude-3-5-haiku-20241022
-                model = anthropic('claude-3-5-haiku-20241022');
-                console.log('[Anthropic] Using model: claude-3-5-haiku-20241022');
+                // Use vision-enabled model if images are present
+                if (hasImages) {
+                    modelId = 'claude-3-5-sonnet-20241022'; // Claude 3.5 Sonnet supports vision
+                    model = anthropic(modelId);
+                    console.log('[Anthropic] Using vision model: claude-3-5-sonnet-20241022');
+                } else {
+                    modelId = 'claude-3-5-haiku-20241022'; // Claude 3.5 Haiku for text-only
+                    model = anthropic(modelId);
+                    console.log('[Anthropic] Using model: claude-3-5-haiku-20241022');
+                }
             }
         } catch (sdkError) {
             console.error('AI SDK initialization error:', sdkError);
@@ -487,8 +503,7 @@ export async function POST(req: Request) {
         }
 
         // Prepare System Prompt with Context Budget System
-        // Determine model being used for token budget calculation
-        const modelId = provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022';
+        // Token budget calculation (modelId already set above)
         const tokenBudget = getRecommendedBudget(modelId);
 
         // NEW: Just-in-Time Context Injection (Week 4)
@@ -528,6 +543,7 @@ export async function POST(req: Request) {
                     characters: assembledContext.entitiesIncluded.characters.length,
                     worlds: assembledContext.entitiesIncluded.worlds.length,
                     projects: assembledContext.entitiesIncluded.projects.length,
+                    userAssets: linkedEntities.userAssets?.length || 0,
                 });
             } catch (injectionError) {
                 console.warn('[Context Injection] Failed (non-fatal):', injectionError);
@@ -565,10 +581,46 @@ export async function POST(req: Request) {
 
         const finalSystemPrompt = composedContext.content;
 
+        // Process messages to include images if vision is enabled
+        const processedMessages = messages.map((msg, index) => {
+            // Only process the last user message if it has images attached
+            if (msg.role === 'user' && index === messages.length - 1 && hasImages && attachedImageDataUrls.length > 0) {
+                // Format message with images using Vercel AI SDK format
+                const content: Array<{ type: 'text' | 'image'; text?: string; image?: string }> = [
+                    { type: 'text', text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content) }
+                ];
+                
+                // Add images to content
+                attachedImageDataUrls.forEach(dataUrl => {
+                    // Extract base64 from data URL for Vercel AI SDK
+                    const base64Match = dataUrl.match(/^data:image\/[^;]+;base64,(.+)$/);
+                    if (base64Match) {
+                        content.push({
+                            type: 'image',
+                            image: base64Match[1] // Base64 string without data URL prefix
+                        });
+                    } else {
+                        // If already base64, use as-is
+                        content.push({
+                            type: 'image',
+                            image: dataUrl
+                        });
+                    }
+                });
+                
+                return {
+                    ...msg,
+                    content
+                };
+            }
+            
+            return msg;
+        });
+
         // Prepend system prompt to messages for explicit handling
         const coreMessages = [
             { role: 'system', content: finalSystemPrompt },
-            ...messages
+            ...processedMessages
         ];
 
         /*
@@ -583,11 +635,13 @@ export async function POST(req: Request) {
         // DEBUG: Non-streaming generation with enhanced logging
         console.log('[Chat API] Starting text generation:', {
             provider,
-            modelId: provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022',
+            modelId: modelId || (provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022'),
             messagesCount: coreMessages.length,
             isAdminMode,
             hasApiKey: !!finalApiKey,
-            tokenBudget
+            tokenBudget,
+            hasImages,
+            imageCount: hasImages ? (linkedEntities?.userAssets?.filter(a => a.type === 'image').length || 0) : 0
         });
         
         let text;
@@ -646,7 +700,7 @@ export async function POST(req: Request) {
                     provider,
                     isAdminMode,
                     errorMessage: errorMsg,
-                    modelId: provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022'
+                    modelId: modelId || (provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022')
                 });
                 
                 return new Response(
@@ -747,7 +801,7 @@ export async function POST(req: Request) {
                     provider,
                     isAdminMode,
                     errorMessage: error.message,
-                    modelId: provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022'
+                    modelId: modelId || (provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022')
                 });
             } else if (errorLower.includes('429') || errorLower.includes('rate limit')) {
                 errorMessage = 'Rate limit exceeded. Please try again later.';

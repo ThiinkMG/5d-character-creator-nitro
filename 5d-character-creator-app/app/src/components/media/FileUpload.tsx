@@ -13,6 +13,9 @@ import { cn } from '@/lib/utils';
 import { processUploadedFile, isFileSupported } from '@/lib/file-upload';
 import { UserAsset } from '@/types/user-asset';
 import { Button } from '@/components/ui/button';
+import { getChatApiKey, getApiConfig } from '@/lib/api-keys';
+import { compressImageDataUrl, shouldCompressImage } from '@/lib/vision-analysis';
+import { useStore } from '@/lib/store';
 
 interface FileUploadProps {
     onUpload: (assets: UserAsset[]) => void;
@@ -31,6 +34,7 @@ export function FileUpload({
     className,
     disabled = false
 }: FileUploadProps) {
+    const { updateUserAssetVisionAnalysis } = useStore();
     const [isDragging, setIsDragging] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [errors, setErrors] = useState<string[]>([]);
@@ -66,6 +70,55 @@ export function FileUpload({
 
                 processedAssets.push(asset);
                 setSuccessCount(processedAssets.length);
+                
+                // Auto-trigger vision analysis for images (async, don't block)
+                if (asset.type === 'image' && asset.dataUrl) {
+                    // Trigger analysis in background
+                    setTimeout(async () => {
+                        try {
+                            const apiConfig = getApiConfig();
+                            const provider = apiConfig.provider || 'anthropic';
+                            const apiKey = getChatApiKey(provider);
+                            const isAdminMode = typeof window !== 'undefined' && localStorage.getItem('5d-admin-mode') === 'true';
+
+                            if (apiKey) {
+                                // Compress if needed
+                                let imageDataUrl = asset.dataUrl;
+                                if (shouldCompressImage(imageDataUrl)) {
+                                    try {
+                                        imageDataUrl = await compressImageDataUrl(imageDataUrl);
+                                    } catch (compressError) {
+                                        console.warn('Image compression failed:', compressError);
+                                    }
+                                }
+
+                                const response = await fetch('/api/vision', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        imageDataUrl,
+                                        provider: provider === 'openai' ? 'openai' : 'claude',
+                                        apiKey,
+                                        isAdminMode,
+                                    }),
+                                });
+
+                                if (response.ok) {
+                                    const { analysis } = await response.json();
+                                    // Update asset via store
+                                    updateUserAssetVisionAnalysis(
+                                        asset.id,
+                                        analysis,
+                                        provider === 'openai' ? 'openai' : 'claude'
+                                    );
+                                }
+                            }
+                        } catch (error) {
+                            // Silently fail - user can manually trigger analysis
+                            console.warn('Auto vision analysis failed:', error);
+                        }
+                    }, 100);
+                }
             } catch (error) {
                 newErrors.push(`${file.name}: ${error instanceof Error ? error.message : 'Upload failed'}`);
             }

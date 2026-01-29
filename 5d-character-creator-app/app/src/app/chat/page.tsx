@@ -21,6 +21,7 @@ import { useStore } from '@/lib/store';
 import { getChatApiKey, getApiConfig } from '@/lib/api-keys';
 
 import { ChatSession, Message, AppliedUpdate } from '@/types/chat';
+import { UserAsset } from '@/types/user-asset';
 import { PendingUpdateCard } from '@/components/chat/PendingUpdateCard';
 import { ReloadModal } from '@/components/chat/ReloadModal';
 import { UpdateHistorySidebar } from '@/components/chat/UpdateHistorySidebar';
@@ -420,6 +421,7 @@ function ChatContent() {
         addProjectDocument,
         updateProjectDocument,
         projectDocuments,
+        getUserAsset,
         // Phase 1: @ Mention System - Stub creation actions
         createCharacterStub,
         createWorldStub,
@@ -1612,10 +1614,11 @@ What would you like to create today?`,
             }
 
             // Week 4: Prepare linkedEntities for Just-in-Time Context Injection
-            const linkedEntities: { characters: any[]; worlds: any[]; projects: any[] } = {
+            const linkedEntities: { characters: any[]; worlds: any[]; projects: any[]; userAssets?: any[] } = {
                 characters: [],
                 worlds: [],
-                projects: []
+                projects: [],
+                userAssets: []
             };
 
             // Add linked entity
@@ -1648,12 +1651,61 @@ What would you like to create today?`,
                 });
             }
 
+            // Add attached user assets from the chat session
+            // For vision support, we need to send image dataUrls separately
+            const imageDataUrls: string[] = [];
+            try {
+                if (activeSessionId) {
+                    const session = getChatSession(activeSessionId);
+                    if (session?.attachments && session.attachments.length > 0) {
+                        // Safely retrieve assets with error handling
+                        const attachedAssets = session.attachments
+                            .map(assetId => {
+                                try {
+                                    return getUserAsset(assetId);
+                                } catch (error) {
+                                    console.warn(`Failed to get asset ${assetId}:`, error);
+                                    return undefined;
+                                }
+                            })
+                            .filter((asset): asset is UserAsset => asset !== undefined);
+                        
+                        // Separate images for vision API and metadata for context
+                        const assetsForContext = attachedAssets.map(asset => ({
+                            id: asset.id,
+                            name: asset.name,
+                            type: asset.type,
+                            extractedText: asset.extractedText, // Include extracted text for documents
+                            // Exclude dataUrl from context to reduce payload size
+                            altText: asset.altText,
+                            description: asset.description,
+                            visionAnalysis: asset.visionAnalysis // Include stored vision analysis
+                        }));
+                        
+                        // Collect image dataUrls for vision API
+                        attachedAssets.forEach(asset => {
+                            if (asset.type === 'image' && asset.dataUrl) {
+                                imageDataUrls.push(asset.dataUrl);
+                            }
+                        });
+                        
+                        if (assetsForContext.length > 0) {
+                            linkedEntities.userAssets = assetsForContext;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error retrieving attached assets:', error);
+                // Continue without assets rather than breaking the entire request
+            }
+
             // Check if admin mode is active
             const isAdminModeActive = typeof window !== 'undefined' && localStorage.getItem('5d-admin-mode') === 'true';
 
-            // Determine if we should use context injection (enabled when we have a mode and entities)
+            // Determine if we should use context injection (enabled when we have a mode and entities OR attached assets)
             const hasEntities = linkedEntities.characters.length > 0 || linkedEntities.worlds.length > 0 || linkedEntities.projects.length > 0;
-            const useContextInjection = hasEntities && mode !== null;
+            const hasAttachedAssets = (linkedEntities.userAssets?.length || 0) > 0;
+            const useContextInjection = (hasEntities || hasAttachedAssets) && mode !== null;
 
             const response = await fetch('/api/chat', {
                 method: 'POST',
@@ -1672,6 +1724,8 @@ What would you like to create today?`,
                     useContextInjection,
                     chatMode: mode || 'chat',
                     linkedEntities: useContextInjection ? linkedEntities : undefined,
+                    // Vision support: send image dataUrls for vision API
+                    imageDataUrls: imageDataUrls.length > 0 ? imageDataUrls : undefined,
                 }),
             });
 

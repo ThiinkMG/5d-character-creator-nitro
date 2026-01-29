@@ -7,11 +7,13 @@
  */
 
 import React, { useState } from 'react';
-import { X, Paperclip, Image as ImageIcon, FileText, Video, Plus } from 'lucide-react';
+import { X, Paperclip, Image as ImageIcon, FileText, Video, Plus, FolderOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/lib/store';
 import { UserAsset } from '@/types/user-asset';
 import { FileUpload } from '@/components/media/FileUpload';
+import { AssetPicker } from '@/components/media/AssetPicker';
+import { VisionAnalysisButton } from '@/components/media/VisionAnalysisButton';
 import { Button } from '@/components/ui/button';
 import { ChatSession } from '@/types/chat';
 
@@ -29,10 +31,13 @@ export function ChatAttachments({ chatSessionId, className, onCreateSession }: C
         detachAssetFromChat,
         getUserAssets,
         addUserAsset,
-        addChatSession
+        addChatSession,
+        userAssets
     } = useStore();
     
     const [showUpload, setShowUpload] = useState(false);
+    const [showPicker, setShowPicker] = useState(false);
+    const [uploadMode, setUploadMode] = useState<'upload' | 'browse'>('upload');
     
     // Create session if it doesn't exist
     const ensureSession = (): string => {
@@ -85,6 +90,29 @@ export function ChatAttachments({ chatSessionId, className, onCreateSession }: C
             ensureSession();
         }
         setShowUpload(true);
+        setUploadMode('upload');
+    };
+
+    const handleShowPicker = () => {
+        // Ensure session exists before showing picker
+        if (!chatSessionId) {
+            ensureSession();
+        }
+        setShowUpload(true);
+        setUploadMode('browse');
+    };
+
+    const handlePickerSelect = (assets: UserAsset[]) => {
+        const sessionId = ensureSession();
+        assets.forEach(asset => {
+            // Add to store if it's a new asset (converted from media item)
+            if (!userAssets.find(a => a.id === asset.id)) {
+                addUserAsset(asset);
+            }
+            attachAssetToChat(sessionId, asset.id);
+        });
+        setShowUpload(false);
+        setShowPicker(false);
     };
 
     if (attachedAssets.length === 0 && !showUpload) {
@@ -98,6 +126,15 @@ export function ChatAttachments({ chatSessionId, className, onCreateSession }: C
                 >
                     <Paperclip className="w-4 h-4 mr-2" />
                     Attach Files
+                </Button>
+                <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleShowPicker}
+                    className="text-white/70 hover:text-white"
+                >
+                    <FolderOpen className="w-4 h-4 mr-2" />
+                    Browse Assets
                 </Button>
             </div>
         );
@@ -129,6 +166,9 @@ export function ChatAttachments({ chatSessionId, className, onCreateSession }: C
                             <span className="text-xs text-white/80 max-w-[150px] truncate">
                                 {asset.name}
                             </span>
+                            {asset.type === 'image' && (
+                                <VisionAnalysisButton asset={asset} size="sm" />
+                            )}
                             <button
                                 onClick={() => handleDetach(asset.id)}
                                 className="opacity-0 group-hover:opacity-100 transition-opacity text-white/40 hover:text-white"
@@ -140,37 +180,92 @@ export function ChatAttachments({ chatSessionId, className, onCreateSession }: C
                 </div>
             )}
 
-            {/* Upload UI */}
+            {/* Upload/Browse UI */}
             {showUpload && (
-                <div className="border border-white/10 rounded-lg p-4 bg-white/5">
-                    <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-sm font-medium text-white">Attach Files</h4>
+                <div className="border border-white/10 rounded-lg overflow-hidden bg-white/5">
+                    {/* Tabs */}
+                    <div className="flex border-b border-white/10">
                         <button
-                            onClick={() => setShowUpload(false)}
-                            className="text-white/40 hover:text-white"
+                            onClick={() => setUploadMode('upload')}
+                            className={cn(
+                                "flex-1 px-4 py-2 text-sm font-medium transition-colors",
+                                uploadMode === 'upload'
+                                    ? "bg-white/10 text-white border-b-2 border-primary"
+                                    : "text-white/60 hover:text-white/80"
+                            )}
+                        >
+                            <Paperclip className="w-4 h-4 inline mr-2" />
+                            Upload New
+                        </button>
+                        <button
+                            onClick={() => setUploadMode('browse')}
+                            className={cn(
+                                "flex-1 px-4 py-2 text-sm font-medium transition-colors",
+                                uploadMode === 'browse'
+                                    ? "bg-white/10 text-white border-b-2 border-primary"
+                                    : "text-white/60 hover:text-white/80"
+                            )}
+                        >
+                            <FolderOpen className="w-4 h-4 inline mr-2" />
+                            Browse Existing
+                        </button>
+                        <button
+                            onClick={() => {
+                                setShowUpload(false);
+                                setShowPicker(false);
+                            }}
+                            className="px-4 py-2 text-white/40 hover:text-white transition-colors"
                         >
                             <X className="w-4 h-4" />
                         </button>
                     </div>
-                    <FileUpload
-                        onUpload={handleUpload}
-                        multiple={true}
-                        maxFiles={10}
-                    />
+
+                    {/* Content */}
+                    <div className="p-4">
+                        {uploadMode === 'upload' ? (
+                            <FileUpload
+                                onUpload={handleUpload}
+                                multiple={true}
+                                maxFiles={10}
+                            />
+                        ) : (
+                            <div className="h-[400px]">
+                                <AssetPicker
+                                    onSelect={handlePickerSelect}
+                                    onCancel={() => {
+                                        setShowUpload(false);
+                                        setShowPicker(false);
+                                    }}
+                                    maxSelections={10}
+                                />
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
 
-            {/* Add More Button */}
+            {/* Add More Buttons */}
             {!showUpload && attachedAssets.length > 0 && (
-                <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={handleShowUpload}
-                    className="text-white/70 hover:text-white"
-                >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add More Files
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={handleShowUpload}
+                        className="text-white/70 hover:text-white"
+                    >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Upload More
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={handleShowPicker}
+                        className="text-white/70 hover:text-white"
+                    >
+                        <FolderOpen className="w-4 h-4 mr-2" />
+                        Browse Assets
+                    </Button>
+                </div>
             )}
         </div>
     );

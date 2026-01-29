@@ -6,6 +6,26 @@
 
 export type UserAssetType = 'image' | 'document' | 'video';
 
+/**
+ * Vision analysis result from AI vision APIs
+ */
+export interface VisionAnalysis {
+    description: string; // Detailed description of image content
+    detectedObjects?: string[]; // Objects, characters, items detected
+    sceneDescription?: string; // Overall scene context
+    characterDetails?: { // If character image
+        appearance: string;
+        clothing: string;
+        pose: string;
+        expression: string;
+    };
+    style?: string; // Art style, medium
+    colors?: string[]; // Dominant colors
+    analyzedAt: Date;
+    provider: 'claude' | 'openai';
+    model: string; // Model used
+}
+
 export interface UserAsset {
     id: string;
     name: string;
@@ -28,6 +48,11 @@ export interface UserAsset {
     imageWidth?: number;
     imageHeight?: number;
     altText?: string;
+    
+    // Vision analysis (for images)
+    visionAnalysis?: VisionAnalysis;
+    visionAnalysisProvider?: 'claude' | 'openai';
+    visionAnalyzedAt?: Date;
     
     // Usage tracking
     usedInChats?: string[]; // Chat session IDs where this asset was used

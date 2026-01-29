@@ -135,6 +135,7 @@ interface GlobalState {
     getUserAssets: (type?: UserAsset['type']) => UserAsset[];
     attachAssetToChat: (chatSessionId: string, assetId: string) => void;
     detachAssetFromChat: (chatSessionId: string, assetId: string) => void;
+    updateUserAssetVisionAnalysis: (id: string, visionAnalysis: UserAsset['visionAnalysis'], provider?: 'claude' | 'openai') => void;
 }
 
 export const useStore = create<GlobalState>()(
@@ -871,6 +872,21 @@ export const useStore = create<GlobalState>()(
                                 attachments: session.attachments?.filter((id) => id !== assetId) || []
                             }
                             : session
+                    )
+                })),
+
+            updateUserAssetVisionAnalysis: (id, visionAnalysis, provider) =>
+                set((state) => ({
+                    userAssets: state.userAssets.map((asset) =>
+                        asset.id === id
+                            ? {
+                                ...asset,
+                                visionAnalysis,
+                                visionAnalysisProvider: provider || visionAnalysis?.provider,
+                                visionAnalyzedAt: visionAnalysis ? new Date() : undefined,
+                                updatedAt: new Date()
+                            }
+                            : asset
                     )
                 })),
         }),
