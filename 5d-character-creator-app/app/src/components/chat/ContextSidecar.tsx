@@ -92,44 +92,36 @@ export function ContextSidecar({
 
     return (
         <>
-            {/* Toggle Button (always visible) */}
-            <Button
-                size="sm"
-                variant="ghost"
-                onClick={onToggle}
-                className={cn(
-                    "fixed z-40 h-8 gap-2",
-                    "bg-[#0A0A0F]/95 border border-white/10 backdrop-blur-xl",
-                    "hover:bg-[#0A0A0F] hover:border-white/20",
-                    "text-white/70 hover:text-white",
-                    "transition-all duration-300 ease-in-out",
-                    // Desktop positioning - adjust based on sidecar state
-                    "md:right-4 md:top-20",
-                    isOpen && "md:right-[316px]", // 300px sidecar + 16px gap
-                    // Mobile positioning (bottom right)
-                    "right-4 bottom-24 md:bottom-auto md:top-20",
-                    // Badge for entity count when closed
-                    !isOpen && hasContextEntities && "pr-2"
-                )}
-                title={isOpen ? "Close Context Sidecar (Ctrl+Shift+C)" : "Open Context Sidecar (Ctrl+Shift+C)"}
-            >
-                {isOpen ? (
-                    <>
-                        <PanelRightClose className="w-4 h-4" />
-                        <span className="text-xs hidden sm:inline">Close</span>
-                    </>
-                ) : (
-                    <>
-                        <PanelRightOpen className="w-4 h-4" />
-                        <span className="text-xs hidden sm:inline">Context</span>
-                        {hasContextEntities && (
-                            <span className="ml-1 px-1.5 py-0.5 bg-primary/20 text-primary text-[10px] rounded-full font-medium">
-                                {totalContextEntities}
-                            </span>
-                        )}
-                    </>
-                )}
-            </Button>
+            {/* Toggle Button - Only show when sidecar is closed (to open it) */}
+            {!isOpen && (
+                <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={onToggle}
+                    className={cn(
+                        "fixed z-40 h-8 gap-2",
+                        "bg-[#0A0A0F]/95 border border-white/10 backdrop-blur-xl",
+                        "hover:bg-[#0A0A0F] hover:border-white/20",
+                        "text-white/70 hover:text-white",
+                        "transition-all duration-300 ease-in-out",
+                        // Desktop positioning
+                        "md:right-4 md:top-20",
+                        // Mobile positioning (bottom right)
+                        "right-4 bottom-24 md:bottom-auto md:top-20",
+                        // Badge for entity count when closed
+                        hasContextEntities && "pr-2"
+                    )}
+                    title="Open Context Sidecar (Ctrl+Shift+C)"
+                >
+                    <PanelRightOpen className="w-4 h-4" />
+                    <span className="text-xs hidden sm:inline">Context</span>
+                    {hasContextEntities && (
+                        <span className="ml-1 px-1.5 py-0.5 bg-primary/20 text-primary text-[10px] rounded-full font-medium">
+                            {totalContextEntities}
+                        </span>
+                    )}
+                </Button>
+            )}
 
             {/* Sidecar Panel - Desktop: part of flex layout (always in DOM for smooth transitions) */}
             <aside
@@ -210,9 +202,11 @@ export function ContextSidecar({
                             size="sm"
                             variant="ghost"
                             onClick={onToggle}
-                            className="h-6 w-6 p-0 text-white/50 hover:text-white hover:bg-white/10"
+                            className="h-6 gap-1.5 px-2 text-white/50 hover:text-white hover:bg-white/10"
+                            title="Close Context Sidecar (Ctrl+Shift+C)"
                         >
-                            <X className="w-4 h-4" />
+                            <PanelRightClose className="w-4 h-4" />
+                            <span className="text-xs hidden sm:inline">Close</span>
                         </Button>
                     </div>
                 </div>
