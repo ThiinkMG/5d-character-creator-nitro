@@ -102,10 +102,10 @@ export function ContextSidecar({
                     "bg-[#0A0A0F]/95 border border-white/10 backdrop-blur-xl",
                     "hover:bg-[#0A0A0F] hover:border-white/20",
                     "text-white/70 hover:text-white",
-                    "transition-all duration-300",
-                    // Desktop positioning
+                    "transition-all duration-300 ease-in-out",
+                    // Desktop positioning - adjust based on sidecar state
                     "md:right-4 md:top-20",
-                    isOpen && "md:right-[320px]",
+                    isOpen && "md:right-[316px]", // 300px sidecar + 16px gap
                     // Mobile positioning (bottom right)
                     "right-4 bottom-24 md:bottom-auto md:top-20",
                     // Badge for entity count when closed
@@ -131,22 +131,58 @@ export function ContextSidecar({
                 )}
             </Button>
 
-            {/* Sidecar Panel */}
-            <div
+            {/* Sidecar Panel - Desktop: part of flex layout (always in DOM for smooth transitions) */}
+            <aside
                 className={cn(
-                    "fixed z-30",
-                    "bg-[#0A0A0F]/95 border-l border-white/10 backdrop-blur-xl",
-                    "transition-transform duration-300 ease-in-out",
-                    "overflow-hidden flex flex-col",
-                    // Desktop: right sidebar
-                    "md:right-0 md:top-0 md:bottom-0 md:w-[300px]",
-                    // Mobile: bottom sheet style
-                    "inset-x-0 bottom-0 top-auto md:inset-x-auto md:top-0",
-                    "rounded-t-2xl md:rounded-none",
-                    "max-h-[70vh] md:max-h-none",
-                    isOpen ? "translate-y-0 md:translate-x-0" : "translate-y-full md:translate-y-0 md:translate-x-full"
+                    "hidden md:flex shrink-0",
+                    "bg-[#0A0A0F]/95 backdrop-blur-xl",
+                    "overflow-hidden flex-col h-full",
+                    "transition-all duration-300 ease-in-out",
+                    isOpen ? "w-[300px] opacity-100 border-l border-white/10" : "w-0 opacity-0 border-l-0",
+                    // Ensure flush to right edge - no margin
+                    "mr-0"
                 )}
+                style={{ 
+                    minWidth: isOpen ? '300px' : '0',
+                    maxWidth: isOpen ? '300px' : '0',
+                    marginRight: 0,
+                    pointerEvents: isOpen ? 'auto' : 'none'
+                }}
             >
+                {isOpen && renderSidecarContent()}
+            </aside>
+
+            {/* Mobile: Fixed bottom sheet overlay */}
+            {isOpen && (
+                <aside
+                    className={cn(
+                        "md:hidden fixed z-30 right-0",
+                        "bg-[#0A0A0F]/95 border-l border-white/10 backdrop-blur-xl",
+                        "transition-transform duration-300 ease-in-out",
+                        "overflow-hidden flex flex-col",
+                        "inset-x-0 bottom-0 top-auto",
+                        "rounded-t-2xl",
+                        "max-h-[70vh]",
+                        isOpen ? "translate-y-0" : "translate-y-full"
+                    )}
+                >
+                    {renderSidecarContent()}
+                </aside>
+            )}
+
+            {/* Backdrop (mobile only) */}
+            {isOpen && (
+                <div
+                    className="fixed inset-0 bg-black/50 z-20 md:hidden"
+                    onClick={onToggle}
+                />
+            )}
+        </>
+    );
+
+    function renderSidecarContent() {
+        return (
+            <>
                 {/* Header */}
                 <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-white/10 bg-white/5 shrink-0">
                     <div className="flex items-center gap-2">
@@ -290,15 +326,7 @@ export function ContextSidecar({
                         <span>{pinnedEntities.length + autoDetectedWithData.length} total</span>
                     </div>
                 </div>
-            </div>
-
-            {/* Backdrop (mobile and tablet) */}
-            {isOpen && (
-                <div
-                    className="fixed inset-0 bg-black/50 z-20 lg:hidden"
-                    onClick={onToggle}
-                />
-            )}
-        </>
-    );
+            </>
+        );
+    }
 }

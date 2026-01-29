@@ -3262,12 +3262,9 @@ What would you like to create today?`,
             }
 
             {/* Main Content Area with Context Sidecar */}
-            <div className="flex-1 flex overflow-hidden relative">
+            <div className="flex-1 flex overflow-hidden">
                 {/* Messages */}
-                <div className={cn(
-                    "flex-1 overflow-y-auto px-6 py-8 transition-all duration-300",
-                    isContextSidecarOpen && "mr-[300px]"
-                )}>
+                <div className="flex-1 overflow-y-auto px-6 py-8 transition-all duration-300">
                     <div className="max-w-3xl mx-auto space-y-6">
                     {messages.map((message, index) => (
                         <div key={message.id} className={cn("animate-fade-in flex items-start gap-3", message.role === 'user' ? 'flex-row-reverse justify-end' : 'flex-row justify-start')} style={{ animationDelay: `${index * 50}ms` }}>
