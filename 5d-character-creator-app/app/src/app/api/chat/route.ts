@@ -281,6 +281,8 @@ export async function POST(req: Request) {
     // Extract provider and isAdminMode early so they're available in catch block
     let provider: string = 'anthropic';
     let isAdminMode: boolean = false;
+    // Track selected model so we can include it in error logging and budget calculation
+    let modelId: string | undefined;
     
     try {
         // Parse request body with error handling
@@ -468,7 +470,6 @@ export async function POST(req: Request) {
         
         // Select the model based on provider and whether vision is needed
         let model;
-        let modelId: string = provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022'; // Default fallback
         try {
             if (provider === 'openai') {
                 const openai = createOpenAI({ apiKey: finalApiKey });
@@ -503,8 +504,9 @@ export async function POST(req: Request) {
         }
 
         // Prepare System Prompt with Context Budget System
-        // Token budget calculation (modelId already set above)
-        const tokenBudget = getRecommendedBudget(modelId);
+        // Token budget calculation (ensure we have a safe fallback modelId)
+        const effectiveModelId = modelId ?? (provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022');
+        const tokenBudget = getRecommendedBudget(effectiveModelId);
 
         // NEW: Just-in-Time Context Injection (Week 4)
         let injectedContext: string | undefined;
