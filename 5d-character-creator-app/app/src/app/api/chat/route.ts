@@ -468,7 +468,7 @@ export async function POST(req: Request) {
         
         // Select the model based on provider and whether vision is needed
         let model;
-        let modelId: string;
+        let modelId: string = provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022'; // Default fallback
         try {
             if (provider === 'openai') {
                 const openai = createOpenAI({ apiKey: finalApiKey });
@@ -801,7 +801,7 @@ export async function POST(req: Request) {
                     provider,
                     isAdminMode,
                     errorMessage: error.message,
-                    modelId: modelId || (provider === 'openai' ? 'gpt-4o' : 'claude-3-5-haiku-20241022')
+                    modelId: modelId
                 });
             } else if (errorLower.includes('429') || errorLower.includes('rate limit')) {
                 errorMessage = 'Rate limit exceeded. Please try again later.';
