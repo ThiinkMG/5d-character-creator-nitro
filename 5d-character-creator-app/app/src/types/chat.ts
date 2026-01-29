@@ -48,6 +48,9 @@ export interface ChatSession {
     // New Feature: Context & Memory
     summary?: string; // AI generated summary
     tags?: string[]; // "Backstory", "Brainstorming", etc.
+    
+    // File attachments for AI context
+    attachments?: string[]; // Array of UserAsset IDs
 
     // New Feature: Branching
     branchParentId?: string; // ID of the session this was forked FROM

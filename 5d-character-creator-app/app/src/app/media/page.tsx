@@ -28,6 +28,7 @@ import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_COLORS, PROJECT_DOCUMENT_TYPE_LABEL
 import { cn } from '@/lib/utils';
 import JSZip from 'jszip';
 import { DeleteWarningDialog } from '@/components/ui/delete-warning-dialog';
+import { FileUpload } from '@/components/media/FileUpload';
 
 type MediaItem = {
     id: string;
@@ -48,11 +49,24 @@ type MediaItem = {
 };
 
 type SortOption = 'name' | 'date' | 'source' | 'type';
-type FilterOption = 'all' | 'images' | 'videos' | 'documents' | 'characters' | 'worlds' | 'projects';
+type FilterOption = 'all' | 'images' | 'videos' | 'documents' | 'characters' | 'worlds' | 'projects' | 'user-uploaded';
 type ViewMode = 'grid' | 'list';
 
 export default function MediaPage() {
-    const { characters, worlds, projects, characterDocuments, projectDocuments, updateCharacter, updateWorld, deleteCharacterDocument, deleteProjectDocument } = useStore();
+    const { 
+        characters, 
+        worlds, 
+        projects, 
+        characterDocuments, 
+        projectDocuments, 
+        userAssets,
+        addUserAsset,
+        deleteUserAsset,
+        updateCharacter, 
+        updateWorld, 
+        deleteCharacterDocument, 
+        deleteProjectDocument 
+    } = useStore();
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState<SortOption>('date');
     const [filterBy, setFilterBy] = useState<FilterOption>('all');
@@ -249,8 +263,27 @@ export default function MediaPage() {
             });
         });
 
+        // User Uploaded Assets
+        userAssets.forEach((asset) => {
+            items.push({
+                id: `user-asset-${asset.id}`,
+                url: asset.thumbnailUrl || asset.dataUrl,
+                type: asset.type,
+                name: asset.name,
+                altText: asset.altText,
+                caption: asset.description,
+                sourceType: 'character' as const, // Using character as placeholder, but we'll identify by id prefix
+                sourceId: asset.id,
+                sourceName: 'User Uploads',
+                location: 'User Assets',
+                uploadedAt: asset.uploadedAt instanceof Date ? asset.uploadedAt : new Date(asset.uploadedAt),
+                documentType: asset.type === 'document' ? 'user-document' : undefined,
+                documentContent: asset.extractedText
+            });
+        });
+
         return items;
-    }, [characters, worlds, projects, characterDocuments, projectDocuments]);
+    }, [characters, worlds, projects, characterDocuments, projectDocuments, userAssets]);
 
     // Filter and sort media items
     const filteredAndSortedItems = useMemo(() => {
@@ -281,6 +314,8 @@ export default function MediaPage() {
             filtered = filtered.filter((item) => item.sourceType === 'world');
         } else if (filterBy === 'projects') {
             filtered = filtered.filter((item) => item.sourceType === 'project');
+        } else if (filterBy === 'user-uploaded') {
+            filtered = filtered.filter((item) => item.id.startsWith('user-asset-'));
         }
 
         // Sort
@@ -643,6 +678,12 @@ export default function MediaPage() {
                 deleteProjectDocument(docId);
             }
         }
+
+        // Handle user asset deletion
+        if (item.id.startsWith('user-asset-')) {
+            const assetId = item.id.replace('user-asset-', '');
+            deleteUserAsset(assetId);
+        }
     };
 
     const handleDeleteItem = (itemId: string) => {
@@ -727,6 +768,7 @@ export default function MediaPage() {
                                 <option value="characters">From Characters</option>
                                 <option value="worlds">From Worlds</option>
                                 <option value="projects">From Projects</option>
+                                <option value="user-uploaded">User Uploads</option>
                             </select>
 
                             <select
@@ -763,6 +805,16 @@ export default function MediaPage() {
                                 </Button>
                             </div>
                         </div>
+                    </div>
+
+                    {/* File Upload Section */}
+                    <div className="mt-4 pt-4 border-t border-white/10">
+                        <FileUpload
+                            onUpload={(assets) => {
+                                assets.forEach(asset => addUserAsset(asset));
+                            }}
+                            multiple={true}
+                        />
                     </div>
 
                     {/* Bulk Actions */}

@@ -28,6 +28,7 @@ export interface LinkedEntities {
     characters?: Character[];
     worlds?: World[];
     projects?: Project[];
+    userAssets?: Array<{ id: string; name: string; type: string; extractedText?: string; dataUrl?: string }>; // User uploaded files
 }
 
 /**
@@ -155,6 +156,40 @@ export function assembleContextForPrompt(
             const formatted = formatEntityContext(filtered, includeDebugInfo);
             contextParts.push(formatted);
             totalTokens += filtered.tokenCount;
+        }
+    }
+
+    // Process user uploaded assets (documents and images)
+    if (linkedEntities.userAssets && linkedEntities.userAssets.length > 0) {
+        const assetBudgetPerItem = Math.floor(500 / linkedEntities.userAssets.length); // Allocate 500 tokens for assets
+        
+        for (const asset of linkedEntities.userAssets) {
+            let assetContext = '';
+            
+            if (asset.type === 'document' && asset.extractedText) {
+                // Include document text (truncated if needed)
+                const text = asset.extractedText;
+                const textTokens = estimateTokens(text);
+                const truncatedText = textTokens > assetBudgetPerItem 
+                    ? text.substring(0, Math.floor((assetBudgetPerItem / textTokens) * text.length)) + '...'
+                    : text;
+                
+                assetContext = `### Attached Document: ${asset.name}\n\n${truncatedText}`;
+                totalTokens += estimateTokens(assetContext);
+            } else if (asset.type === 'image') {
+                // For images, provide metadata and note that image is available
+                assetContext = `### Attached Image: ${asset.name}\n\n[Image file attached: ${asset.name}. Use this image as reference when generating content.]`;
+                if (asset.dataUrl) {
+                    // Note: In a production system, you might want to use vision API here
+                    // For now, we just note the image is available
+                    assetContext += `\n\nImage data available for analysis.`;
+                }
+                totalTokens += estimateTokens(assetContext);
+            }
+            
+            if (assetContext) {
+                contextParts.push(assetContext);
+            }
         }
     }
 

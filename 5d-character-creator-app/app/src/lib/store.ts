@@ -7,6 +7,7 @@ import { ChatSession } from '@/types/chat';
 import { CharacterDocument, ProjectDocument } from '@/types/document';
 import { ModePreset } from '@/types/mode-preset';
 import { ChatMode } from '@/lib/mode-registry';
+import { UserAsset } from '@/types/user-asset';
 
 interface TrashItem {
     id: string;
@@ -32,6 +33,7 @@ interface GlobalState {
     modePresets: ModePreset[];
     trash: TrashItem[];
     developmentQueue: DevelopmentQueueItem[]; // NEW: Phase 1
+    userAssets: UserAsset[]; // NEW: User uploaded files for AI context
 
     activeCharacterId: string | null;
     activeWorldId: string | null;
@@ -124,6 +126,15 @@ interface GlobalState {
     removeFromDevelopmentQueue: (entityId: string) => void;
     getDevelopmentQueue: () => DevelopmentQueueItem[];
     isInDevelopmentQueue: (entityId: string) => boolean;
+
+    // NEW: User Asset Actions (File Uploads)
+    addUserAsset: (asset: UserAsset) => void;
+    updateUserAsset: (id: string, updates: Partial<UserAsset>) => void;
+    deleteUserAsset: (id: string) => void;
+    getUserAsset: (id: string) => UserAsset | undefined;
+    getUserAssets: (type?: UserAsset['type']) => UserAsset[];
+    attachAssetToChat: (chatSessionId: string, assetId: string) => void;
+    detachAssetFromChat: (chatSessionId: string, assetId: string) => void;
 }
 
 export const useStore = create<GlobalState>()(
@@ -138,6 +149,7 @@ export const useStore = create<GlobalState>()(
             modePresets: [],
             trash: [],
             developmentQueue: [], // Phase 1: @ Mention System
+            userAssets: [], // User uploaded files
 
             activeCharacterId: null,
             activeWorldId: null,
@@ -792,6 +804,75 @@ export const useStore = create<GlobalState>()(
 
             isInDevelopmentQueue: (entityId) =>
                 get().developmentQueue.some(item => item.entityId === entityId),
+
+            // User Asset Actions
+            addUserAsset: (asset) =>
+                set((state) => ({
+                    userAssets: [...state.userAssets, asset]
+                })),
+
+            updateUserAsset: (id, updates) =>
+                set((state) => ({
+                    userAssets: state.userAssets.map((asset) =>
+                        asset.id === id
+                            ? { ...asset, ...updates, updatedAt: new Date() }
+                            : asset
+                    )
+                })),
+
+            deleteUserAsset: (id) =>
+                set((state) => ({
+                    userAssets: state.userAssets.filter((asset) => asset.id !== id),
+                    // Also remove from any chat sessions
+                    chatSessions: state.chatSessions.map((session) => ({
+                        ...session,
+                        attachments: session.attachments?.filter((assetId) => assetId !== id) || []
+                    }))
+                })),
+
+            getUserAsset: (id) => get().userAssets.find((asset) => asset.id === id),
+
+            getUserAssets: (type) => {
+                const assets = get().userAssets;
+                return type ? assets.filter((asset) => asset.type === type) : assets;
+            },
+
+            attachAssetToChat: (chatSessionId, assetId) =>
+                set((state) => ({
+                    chatSessions: state.chatSessions.map((session) =>
+                        session.id === chatSessionId
+                            ? {
+                                ...session,
+                                attachments: [...(session.attachments || []), assetId].filter(
+                                    (id, index, arr) => arr.indexOf(id) === index // Remove duplicates
+                                )
+                            }
+                            : session
+                    ),
+                    userAssets: state.userAssets.map((asset) =>
+                        asset.id === assetId
+                            ? {
+                                ...asset,
+                                usedInChats: [...(asset.usedInChats || []), chatSessionId].filter(
+                                    (id, index, arr) => arr.indexOf(id) === index
+                                ),
+                                lastUsedAt: new Date()
+                            }
+                            : asset
+                    )
+                })),
+
+            detachAssetFromChat: (chatSessionId, assetId) =>
+                set((state) => ({
+                    chatSessions: state.chatSessions.map((session) =>
+                        session.id === chatSessionId
+                            ? {
+                                ...session,
+                                attachments: session.attachments?.filter((id) => id !== assetId) || []
+                            }
+                            : session
+                    )
+                })),
         }),
         {
             name: '5d-storage',
@@ -805,6 +886,7 @@ export const useStore = create<GlobalState>()(
                 modePresets: state.modePresets,
                 trash: state.trash,
                 developmentQueue: state.developmentQueue, // Phase 1
+                userAssets: state.userAssets, // User uploaded files
                 isSidebarCollapsed: state.isSidebarCollapsed
             }),
         }
