@@ -348,6 +348,56 @@ const ImageGeneratorModal: React.FC<ImageGeneratorModalProps> = ({
 };
 
 // =============================================================================
+// CREATE NEW CARD COMPONENT
+// =============================================================================
+
+interface CreateNewCardProps {
+  type: 'character' | 'world';
+  onClick: () => void;
+}
+
+const CreateNewCard: React.FC<CreateNewCardProps> = ({ type, onClick }) => {
+  const [isHovered, setIsHovered] = useState(false);
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="relative col-span-1 row-span-1 rounded-2xl overflow-hidden transition-all duration-500 group"
+      style={{
+        background: isHovered
+          ? 'linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(12, 12, 18, 0.9) 100%)'
+          : 'linear-gradient(135deg, rgba(20, 20, 28, 0.6) 0%, rgba(12, 12, 18, 0.8) 100%)',
+        border: `1px dashed ${isHovered ? 'rgba(249, 115, 22, 0.5)' : 'rgba(255, 255, 255, 0.1)'}`,
+        minHeight: '180px'
+      }}
+    >
+      <div className="h-full flex flex-col items-center justify-center gap-3 p-6">
+        <div
+          className={`p-4 rounded-2xl transition-all duration-500 ${
+            isHovered ? 'bg-[#F97316]/20 scale-110' : 'bg-white/5'
+          }`}
+        >
+          <Plus
+            className={`w-6 h-6 transition-colors duration-300 ${
+              isHovered ? 'text-[#F97316]' : 'text-white/30'
+            }`}
+          />
+        </div>
+        <span
+          className={`text-sm font-medium transition-colors duration-300 ${
+            isHovered ? 'text-[#F97316]' : 'text-white/50'
+          }`}
+        >
+          Create New {type === 'world' ? 'World' : 'Character'}
+        </span>
+      </div>
+    </button>
+  );
+};
+
+// =============================================================================
 // GALLERY CARD COMPONENT
 // =============================================================================
 
