@@ -100,6 +100,9 @@ export function VisionAnalysisButton({
     };
 
     const hasAnalysis = !!asset.visionAnalysis;
+    
+    // Map component size to Button size (md -> default)
+    const buttonSize = size === 'md' ? 'default' : size;
 
     return (
         <div className={cn("flex items-center gap-2", className)}>
@@ -110,7 +113,7 @@ export function VisionAnalysisButton({
                 </div>
             )}
             <Button
-                size={size}
+                size={buttonSize}
                 variant="ghost"
                 onClick={handleAnalyze}
                 disabled={analyzing || !asset.dataUrl}
