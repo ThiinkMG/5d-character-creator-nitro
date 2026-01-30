@@ -22,6 +22,9 @@ import { getChatApiKey, getApiConfig } from '@/lib/api-keys';
 
 import { ChatSession, Message, AppliedUpdate } from '@/types/chat';
 import { UserAsset } from '@/types/user-asset';
+import { Character } from '@/types/character';
+import { World } from '@/types/world';
+import { Project } from '@/types/project';
 import { PendingUpdateCard } from '@/components/chat/PendingUpdateCard';
 import { ReloadModal } from '@/components/chat/ReloadModal';
 import { UpdateHistorySidebar } from '@/components/chat/UpdateHistorySidebar';
@@ -829,28 +832,30 @@ What would you like to create today?`,
             }
             
             if (entity) {
-                setLinkedEntity(entity);
+                // Create local const for TypeScript narrowing
+                const currentEntity = entity;
+                setLinkedEntity(currentEntity);
                 // For script, scene, and chat_with modes, show setup modal instead of welcome message
-                if ((mode === 'script' || mode === 'scene' || mode === 'chat_with') && entity.type === 'character') {
+                if ((mode === 'script' || mode === 'scene' || mode === 'chat_with') && currentEntity.type === 'character') {
                     setSessionSetupMode(mode as 'script' | 'scene' | 'chat_with');
                     setShowSessionSetup(true);
                     return; // Don't set messages yet, wait for setup
                 }
                 // Set contextual welcome message based on entity type and mode
-                if (entity.type === 'world') {
-                    const world = worlds.find(w => w.id === entity.id);
+                if (currentEntity.type === 'world') {
+                    const world = worlds.find(w => w.id === currentEntity.id);
                     const linkedProject = world?.projectId ? projects.find(p => p.id === world.projectId) : null;
-                    const linkedChars = characters.filter(c => c.worldId === entity.id);
+                    const linkedChars = characters.filter(c => c.worldId === currentEntity.id);
                     const { content, choices } = buildEnhancedWelcomeMessage({
-                        entityName: entity.name,
+                        entityName: currentEntity.name,
                         entityType: 'world',
                         progress: world?.progress,
                         linkedProject: linkedProject ? { id: linkedProject.id, name: linkedProject.name } : null,
                         linkedCharacters: linkedChars.map(c => ({ id: c.id, name: c.name }))
                     });
                     setMessages([{ id: 'welcome', role: 'assistant', content, choices }]);
-                } else if (entity.type === 'character') {
-                    const char = characters.find(c => c.id === entity.id);
+                } else if (currentEntity.type === 'character') {
+                    const char = characters.find(c => c.id === currentEntity.id);
                     const linkedWorld = char?.worldId ? worlds.find(w => w.id === char.worldId) : null;
                     const linkedProject = char?.projectId ? projects.find(p => p.id === char.projectId) : null;
                     const missingFields = char ? [
@@ -860,7 +865,7 @@ What would you like to create today?`,
                         !char.arcProse && 'character arc'
                     ].filter(Boolean) as string[] : [];
                     const { content, choices } = buildEnhancedWelcomeMessage({
-                        entityName: entity.name,
+                        entityName: currentEntity.name,
                         entityType: 'character',
                         progress: char?.progress,
                         linkedWorld: linkedWorld ? { id: linkedWorld.id, name: linkedWorld.name } : null,
@@ -868,15 +873,15 @@ What would you like to create today?`,
                         missingFields
                     });
                     setMessages([{ id: 'welcome', role: 'assistant', content, choices }]);
-                } else if (entity.type === 'project') {
-                    const project = projects.find(p => p.id === entity.id);
-                    const linkedChars = characters.filter(c => c.projectId === entity.id);
-                    const linkedWorlds = worlds.filter(w => w.projectId === entity.id);
+                } else if (currentEntity.type === 'project') {
+                    const project = projects.find(p => p.id === currentEntity.id);
+                    const linkedChars = characters.filter(c => c.projectId === currentEntity.id);
+                    const linkedWorlds = worlds.filter(w => w.projectId === currentEntity.id);
 
                     // Check if there's an output type for document generation
                     if (outputTypeParam && OUTPUT_TYPE_INSTRUCTIONS[outputTypeParam]) {
                         const outputConfig = OUTPUT_TYPE_INSTRUCTIONS[outputTypeParam];
-                        const welcomeContent = `Ready to generate a **${outputConfig.label}** for **${entity.name}**.
+                        const welcomeContent = `Ready to generate a **${outputConfig.label}** for **${currentEntity.name}**.
 
 **Project Summary:** ${project?.summary || 'No summary available'}
 **Genre:** ${project?.genre || 'Not specified'}
@@ -896,7 +901,7 @@ Click **Generate** to create the document, or provide specific instructions for 
                         }]);
                     } else {
                         const { content, choices } = buildEnhancedWelcomeMessage({
-                            entityName: entity.name,
+                            entityName: currentEntity.name,
                             entityType: 'project',
                             progress: project?.progress,
                             linkedCharacters: linkedChars.map(c => ({ id: c.id, name: c.name })),
@@ -2874,7 +2879,7 @@ What would you like to create today?`,
         const isApplied = appliedUpdates.has(message.id);
 
         // Get original data for diff - use linkedEntity first, then targetIdParam
-        let originalData = null;
+        let originalData: Character | World | Project | null | undefined = null;
         if (saveData) {
             if (saveData.type === 'character') {
                 originalData = linkedEntity?.type === 'character' 
