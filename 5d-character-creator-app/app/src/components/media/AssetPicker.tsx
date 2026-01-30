@@ -29,6 +29,8 @@ type MediaItem = {
     documentType?: string;
     documentContent?: string;
     documentLink?: string;
+    /** Original base64 dataUrl - preserved for user assets to avoid re-fetching */
+    originalDataUrl?: string;
 };
 
 type FilterOption = 'all' | 'images' | 'videos' | 'documents' | 'user-uploaded' | 'generated';
@@ -205,7 +207,7 @@ export function AssetPicker({ onSelect, onCancel, selectedAssetIds = new Set(), 
         userAssets.forEach((asset) => {
             items.push({
                 id: `user-asset-${asset.id}`,
-                url: asset.thumbnailUrl || asset.dataUrl,
+                url: asset.thumbnailUrl || asset.dataUrl || '',
                 type: asset.type,
                 name: asset.name,
                 altText: asset.altText,
@@ -216,7 +218,9 @@ export function AssetPicker({ onSelect, onCancel, selectedAssetIds = new Set(), 
                 location: 'User Assets',
                 uploadedAt: asset.uploadedAt instanceof Date ? asset.uploadedAt : new Date(asset.uploadedAt),
                 documentType: asset.type === 'document' ? 'user-document' : undefined,
-                documentContent: asset.extractedText
+                documentContent: asset.extractedText,
+                // Preserve original dataUrl for later use - this is critical for AI vision
+                originalDataUrl: asset.dataUrl
             });
         });
 
@@ -279,23 +283,32 @@ export function AssetPicker({ onSelect, onCancel, selectedAssetIds = new Set(), 
 
     // Convert MediaItem to UserAsset
     const convertToUserAsset = async (item: MediaItem): Promise<UserAsset> => {
-        // If it's already a user asset, return it
+        // If it's already a user asset, return the existing one with full data
         if (item.id.startsWith('user-asset-')) {
             const assetId = item.id.replace('user-asset-', '');
             const existingAsset = userAssets.find(a => a.id === assetId);
             if (existingAsset) {
+                console.log('[AssetPicker] Returning existing user asset:', assetId, { hasDataUrl: !!existingAsset.dataUrl });
                 return existingAsset;
             }
         }
 
         // Convert image URL to base64 data URL
-        const urlToDataUrl = async (url: string): Promise<string> => {
+        const urlToDataUrl = async (url: string): Promise<string | null> => {
+            if (!url) {
+                console.warn('[AssetPicker] No URL provided for conversion');
+                return null;
+            }
+            
             if (url.startsWith('data:')) {
                 return url; // Already a data URL
             }
             
             try {
                 const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
                 const blob = await response.blob();
                 return new Promise((resolve, reject) => {
                     const reader = new FileReader();
@@ -304,19 +317,30 @@ export function AssetPicker({ onSelect, onCancel, selectedAssetIds = new Set(), 
                     reader.readAsDataURL(blob);
                 });
             } catch (error) {
-                console.error('Failed to convert URL to data URL:', error);
-                // Fallback: return original URL
-                return url;
+                console.error('[AssetPicker] Failed to convert URL to data URL:', error, { url: url.substring(0, 100) });
+                // Return null instead of the URL - a regular URL won't work for AI vision
+                return null;
             }
         };
 
-        const dataUrl = await urlToDataUrl(item.url);
+        // PRIORITY: Use originalDataUrl if available (preserved from user assets)
+        // This is critical for AI vision to work
+        let dataUrl: string | null = null;
+        
+        if (item.originalDataUrl) {
+            console.log('[AssetPicker] Using preserved originalDataUrl for:', item.name);
+            dataUrl = item.originalDataUrl;
+        } else {
+            // Try to convert the URL to base64
+            dataUrl = await urlToDataUrl(item.url);
+        }
+        
         const now = new Date();
 
         // Get image dimensions if it's an image
         let imageWidth: number | undefined;
         let imageHeight: number | undefined;
-        if (item.type === 'image') {
+        if (item.type === 'image' && item.url) {
             try {
                 const img = new Image();
                 img.src = item.url;
@@ -329,8 +353,13 @@ export function AssetPicker({ onSelect, onCancel, selectedAssetIds = new Set(), 
                     img.onerror = reject;
                 });
             } catch (error) {
-                console.warn('Failed to get image dimensions:', error);
+                console.warn('[AssetPicker] Failed to get image dimensions:', error);
             }
+        }
+
+        // Log warning if no dataUrl available for images
+        if (item.type === 'image' && !dataUrl) {
+            console.error('[AssetPicker] WARNING: Image has no dataUrl - AI vision will not work for:', item.name);
         }
 
         return {
@@ -339,7 +368,7 @@ export function AssetPicker({ onSelect, onCancel, selectedAssetIds = new Set(), 
             type: item.type,
             mimeType: item.type === 'image' ? 'image/jpeg' : item.type === 'video' ? 'video/mp4' : 'application/pdf',
             size: 0, // Size unknown for generated assets
-            dataUrl,
+            dataUrl: dataUrl || undefined, // Use undefined instead of invalid URL
             thumbnailUrl: item.type === 'image' ? item.url : undefined,
             uploadedAt: item.uploadedAt || now,
             updatedAt: now,
