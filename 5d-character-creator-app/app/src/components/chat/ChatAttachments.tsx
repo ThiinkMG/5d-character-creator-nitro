@@ -7,7 +7,7 @@
  */
 
 import React, { useState } from 'react';
-import { X, Paperclip, Image as ImageIcon, FileText, Video, Plus, FolderOpen } from 'lucide-react';
+import { X, Paperclip, Image as ImageIcon, FileText, Video, Plus, FolderOpen, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/lib/store';
 import { UserAsset } from '@/types/user-asset';
@@ -145,38 +145,67 @@ export function ChatAttachments({ chatSessionId, className, onCreateSession }: C
             {/* Attached Files */}
             {attachedAssets.length > 0 && (
                 <div className="flex flex-wrap gap-2">
-                    {attachedAssets.map((asset) => (
-                        <div
-                            key={asset.id}
-                            className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg group"
-                        >
-                            {asset.type === 'image' && asset.thumbnailUrl ? (
-                                <img
-                                    src={asset.thumbnailUrl}
-                                    alt={asset.altText || asset.name}
-                                    className="w-8 h-8 object-cover rounded"
-                                />
-                            ) : asset.type === 'image' ? (
-                                <ImageIcon className="w-4 h-4 text-white/60" />
-                            ) : asset.type === 'document' ? (
-                                <FileText className="w-4 h-4 text-white/60" />
-                            ) : (
-                                <Video className="w-4 h-4 text-white/60" />
-                            )}
-                            <span className="text-xs text-white/80 max-w-[150px] truncate">
-                                {asset.name}
-                            </span>
-                            {asset.type === 'image' && (
-                                <VisionAnalysisButton asset={asset} size="sm" />
-                            )}
-                            <button
-                                onClick={() => handleDetach(asset.id)}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity text-white/40 hover:text-white"
+                    {attachedAssets.map((asset) => {
+                        // Check if image is missing dataUrl (will cause vision issues)
+                        const isMissingData = asset.type === 'image' && !asset.dataUrl;
+                        
+                        return (
+                            <div
+                                key={asset.id}
+                                className={cn(
+                                    "flex items-center gap-2 px-3 py-2 bg-white/5 border rounded-lg group",
+                                    isMissingData 
+                                        ? "border-yellow-500/50 bg-yellow-500/5" 
+                                        : "border-white/10"
+                                )}
+                                title={isMissingData ? "Image data missing - AI may not see this image. Try re-uploading." : undefined}
                             >
-                                <X className="w-3 h-3" />
-                            </button>
-                        </div>
-                    ))}
+                                {asset.type === 'image' && asset.thumbnailUrl ? (
+                                    <div className="relative">
+                                        <img
+                                            src={asset.thumbnailUrl}
+                                            alt={asset.altText || asset.name}
+                                            className="w-8 h-8 object-cover rounded"
+                                        />
+                                        {isMissingData && (
+                                            <AlertTriangle className="w-3 h-3 text-yellow-500 absolute -top-1 -right-1" />
+                                        )}
+                                    </div>
+                                ) : asset.type === 'image' ? (
+                                    <div className="relative">
+                                        <ImageIcon className="w-4 h-4 text-white/60" />
+                                        {isMissingData && (
+                                            <AlertTriangle className="w-3 h-3 text-yellow-500 absolute -top-1 -right-1" />
+                                        )}
+                                    </div>
+                                ) : asset.type === 'document' ? (
+                                    <FileText className="w-4 h-4 text-white/60" />
+                                ) : (
+                                    <Video className="w-4 h-4 text-white/60" />
+                                )}
+                                <span className={cn(
+                                    "text-xs max-w-[150px] truncate",
+                                    isMissingData ? "text-yellow-400" : "text-white/80"
+                                )}>
+                                    {asset.name}
+                                </span>
+                                {isMissingData && (
+                                    <span className="text-[10px] text-yellow-500" title="Re-upload image">
+                                        ⚠
+                                    </span>
+                                )}
+                                {asset.type === 'image' && !isMissingData && (
+                                    <VisionAnalysisButton asset={asset} size="sm" />
+                                )}
+                                <button
+                                    onClick={() => handleDetach(asset.id)}
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity text-white/40 hover:text-white"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
+                            </div>
+                        );
+                    })}
                 </div>
             )}
 

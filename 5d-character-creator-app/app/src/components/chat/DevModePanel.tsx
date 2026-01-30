@@ -1,10 +1,27 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, ChevronLeft, ChevronRight, Settings, BookOpen, Activity, Minimize2, Maximize2 } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Settings, BookOpen, Activity, Minimize2, Maximize2, Copy, Check, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
+
+// Copy to clipboard hook
+function useCopyToClipboard() {
+    const [copied, setCopied] = useState<string | null>(null);
+    
+    const copy = async (text: string, id: string) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            setCopied(id);
+            setTimeout(() => setCopied(null), 2000);
+        } catch (err) {
+            console.error('Failed to copy:', err);
+        }
+    };
+    
+    return { copied, copy };
+}
 
 export interface DevModeLogEntry {
     id: string;
@@ -71,6 +88,7 @@ export function DevModePanel({ isOpen, onToggle, logs, debugInfo, onClearLogs }:
     const [isMinimized, setIsMinimized] = useState(false);
     const [activeTab, setActiveTab] = useState<'logs' | 'rag' | 'context' | 'settings'>('logs');
     const logsEndRef = useRef<HTMLDivElement>(null);
+    const { copied, copy } = useCopyToClipboard();
 
     // Auto-scroll to bottom when new logs arrive
     useEffect(() => {
@@ -179,14 +197,35 @@ export function DevModePanel({ isOpen, onToggle, logs, debugInfo, onClearLogs }:
                                 <div className="space-y-2">
                                     <div className="flex items-center justify-between mb-3">
                                         <h3 className="text-sm font-semibold">Activity Logs</h3>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={onClearLogs}
-                                            className="h-7 text-xs"
-                                        >
-                                            Clear
-                                        </Button>
+                                        <div className="flex items-center gap-1">
+                                            {logs.length > 0 && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        const allLogs = logs.map(l => 
+                                                            `[${l.timestamp.toLocaleTimeString()}] ${l.type.toUpperCase()}: ${l.message}${l.data ? '\n' + JSON.stringify(l.data, null, 2) : ''}`
+                                                        ).join('\n\n');
+                                                        copy(allLogs, 'all-logs');
+                                                    }}
+                                                    className="h-7 text-xs"
+                                                >
+                                                    {copied === 'all-logs' ? (
+                                                        <><Check className="h-3 w-3 mr-1" /> Copied</>
+                                                    ) : (
+                                                        <><Copy className="h-3 w-3 mr-1" /> Copy All</>
+                                                    )}
+                                                </Button>
+                                            )}
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={onClearLogs}
+                                                className="h-7 text-xs"
+                                            >
+                                                Clear
+                                            </Button>
+                                        </div>
                                     </div>
                                     {logs.length === 0 ? (
                                         <div className="text-center text-muted-foreground text-xs py-8">
@@ -194,40 +233,66 @@ export function DevModePanel({ isOpen, onToggle, logs, debugInfo, onClearLogs }:
                                         </div>
                                     ) : (
                                         <div className="space-y-2">
-                                            {logs.map((log) => (
-                                                <div
-                                                    key={log.id}
-                                                    className={cn(
-                                                        'p-2 rounded-md text-xs border',
-                                                        log.type === 'error' && 'bg-destructive/10 border-destructive/20',
-                                                        log.type === 'rag' && 'bg-blue-500/10 border-blue-500/20',
-                                                        log.type === 'context' && 'bg-purple-500/10 border-purple-500/20',
-                                                        log.type === 'api' && 'bg-green-500/10 border-green-500/20'
-                                                    )}
-                                                >
-                                                    <div className="flex items-start justify-between gap-2">
-                                                        <div className="flex-1">
-                                                            <div className="flex items-center gap-2 mb-1">
-                                                                <span className="font-medium capitalize">{log.type}</span>
-                                                                <span className="text-muted-foreground">
-                                                                    {log.timestamp.toLocaleTimeString()}
-                                                                </span>
+                                            {logs.map((log) => {
+                                                const logContent = log.data 
+                                                    ? `${log.type.toUpperCase()}: ${log.message}\n\nDetails:\n${JSON.stringify(log.data, null, 2)}`
+                                                    : `${log.type.toUpperCase()}: ${log.message}`;
+                                                
+                                                return (
+                                                    <div
+                                                        key={log.id}
+                                                        className={cn(
+                                                            'p-2 rounded-md text-xs border group',
+                                                            log.type === 'error' && 'bg-destructive/10 border-destructive/20',
+                                                            log.type === 'rag' && 'bg-blue-500/10 border-blue-500/20',
+                                                            log.type === 'context' && 'bg-purple-500/10 border-purple-500/20',
+                                                            log.type === 'api' && 'bg-green-500/10 border-green-500/20'
+                                                        )}
+                                                    >
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <div className="flex-1">
+                                                                <div className="flex items-center gap-2 mb-1">
+                                                                    {log.type === 'error' && <AlertCircle className="h-3 w-3 text-destructive" />}
+                                                                    <span className="font-medium capitalize">{log.type}</span>
+                                                                    <span className="text-muted-foreground">
+                                                                        {log.timestamp.toLocaleTimeString()}
+                                                                    </span>
+                                                                </div>
+                                                                <div className={cn(
+                                                                    "text-muted-foreground",
+                                                                    log.type === 'error' && "text-destructive/90"
+                                                                )}>
+                                                                    {log.message}
+                                                                </div>
+                                                                {log.data && (
+                                                                    <details className="mt-1">
+                                                                        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                                                                            Details
+                                                                        </summary>
+                                                                        <pre className="mt-1 text-[10px] overflow-x-auto bg-background/50 p-2 rounded max-h-40 overflow-y-auto">
+                                                                            {JSON.stringify(log.data, null, 2)}
+                                                                        </pre>
+                                                                    </details>
+                                                                )}
                                                             </div>
-                                                            <div className="text-muted-foreground">{log.message}</div>
-                                                            {log.data && (
-                                                                <details className="mt-1">
-                                                                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                                                                        Details
-                                                                    </summary>
-                                                                    <pre className="mt-1 text-[10px] overflow-x-auto bg-background/50 p-2 rounded">
-                                                                        {JSON.stringify(log.data, null, 2)}
-                                                                    </pre>
-                                                                </details>
-                                                            )}
+                                                            {/* Copy button */}
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => copy(logContent, log.id)}
+                                                                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                title="Copy log entry"
+                                                            >
+                                                                {copied === log.id ? (
+                                                                    <Check className="h-3 w-3 text-green-400" />
+                                                                ) : (
+                                                                    <Copy className="h-3 w-3" />
+                                                                )}
+                                                            </Button>
                                                         </div>
                                                     </div>
-                                                </div>
-                                            ))}
+                                                );
+                                            })}
                                             <div ref={logsEndRef} />
                                         </div>
                                     )}
@@ -236,13 +301,37 @@ export function DevModePanel({ isOpen, onToggle, logs, debugInfo, onClearLogs }:
 
                             {activeTab === 'rag' && (
                                 <div className="space-y-4">
-                                    <h3 className="text-sm font-semibold">Knowledge Bank Retrieval</h3>
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-sm font-semibold">Knowledge Bank Retrieval</h3>
+                                        {debugInfo?.rag && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => copy(JSON.stringify(debugInfo.rag, null, 2), 'rag-all')}
+                                                className="h-7 text-xs"
+                                            >
+                                                {copied === 'rag-all' ? (
+                                                    <><Check className="h-3 w-3 mr-1" /> Copied</>
+                                                ) : (
+                                                    <><Copy className="h-3 w-3 mr-1" /> Copy All</>
+                                                )}
+                                            </Button>
+                                        )}
+                                    </div>
                                     {debugInfo?.rag ? (
                                         <div className="space-y-3">
                                             <div>
                                                 <div className="text-xs text-muted-foreground mb-1">Query</div>
-                                                <div className="text-sm bg-background/50 p-2 rounded">
+                                                <div className="text-sm bg-background/50 p-2 rounded group relative">
                                                     {debugInfo.rag.query}
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => copy(debugInfo.rag?.query || '', 'rag-query')}
+                                                        className="h-5 w-5 p-0 absolute top-1 right-1 opacity-0 group-hover:opacity-100"
+                                                    >
+                                                        {copied === 'rag-query' ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                                                    </Button>
                                                 </div>
                                             </div>
                                             <div>
@@ -268,13 +357,13 @@ export function DevModePanel({ isOpen, onToggle, logs, debugInfo, onClearLogs }:
                                                 <div className="text-xs text-muted-foreground mb-2">
                                                     Results ({debugInfo.rag.results.length})
                                                 </div>
-                                                <div className="space-y-2">
+                                                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                                                     {debugInfo.rag.results.map((result, idx) => (
                                                         <div
                                                             key={idx}
-                                                            className="p-2 bg-background/50 rounded border border-border"
+                                                            className="p-2 bg-background/50 rounded border border-border group relative"
                                                         >
-                                                            <div className="font-medium text-sm mb-1">
+                                                            <div className="font-medium text-sm mb-1 pr-6">
                                                                 {result.item.title}
                                                             </div>
                                                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -284,6 +373,14 @@ export function DevModePanel({ isOpen, onToggle, logs, debugInfo, onClearLogs }:
                                                                 <span>•</span>
                                                                 <span className="capitalize">{result.item.type}</span>
                                                             </div>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => copy(JSON.stringify(result, null, 2), `rag-result-${idx}`)}
+                                                                className="h-5 w-5 p-0 absolute top-1 right-1 opacity-0 group-hover:opacity-100"
+                                                            >
+                                                                {copied === `rag-result-${idx}` ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                                                            </Button>
                                                         </div>
                                                     ))}
                                                 </div>

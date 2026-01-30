@@ -1654,21 +1654,30 @@ What would you like to create today?`,
             // Add attached user assets from the chat session
             // For vision support, we need to send image dataUrls separately
             const imageDataUrls: string[] = [];
+            const imageWarnings: string[] = [];
             try {
                 if (activeSessionId) {
                     const session = getChatSession(activeSessionId);
                     if (session?.attachments && session.attachments.length > 0) {
+                        console.log('[Chat] Processing attachments:', session.attachments.length);
+                        
                         // Safely retrieve assets with error handling
                         const attachedAssets = session.attachments
                             .map(assetId => {
                                 try {
-                                    return getUserAsset(assetId);
+                                    const asset = getUserAsset(assetId);
+                                    if (!asset) {
+                                        console.warn(`[Chat] Asset not found: ${assetId}`);
+                                    }
+                                    return asset;
                                 } catch (error) {
-                                    console.warn(`Failed to get asset ${assetId}:`, error);
+                                    console.warn(`[Chat] Failed to get asset ${assetId}:`, error);
                                     return undefined;
                                 }
                             })
                             .filter((asset): asset is UserAsset => asset !== undefined);
+                        
+                        console.log('[Chat] Retrieved assets:', attachedAssets.length, attachedAssets.map(a => ({ id: a.id, type: a.type, hasDataUrl: !!a.dataUrl })));
                         
                         // Separate images for vision API and metadata for context
                         const assetsForContext = attachedAssets.map(asset => ({
@@ -1684,23 +1693,54 @@ What would you like to create today?`,
                         
                         // Collect image dataUrls for vision API
                         attachedAssets.forEach(asset => {
-                            if (asset.type === 'image' && asset.dataUrl) {
-                                imageDataUrls.push(asset.dataUrl);
+                            if (asset.type === 'image') {
+                                if (asset.dataUrl) {
+                                    imageDataUrls.push(asset.dataUrl);
+                                    console.log(`[Chat] Added image for vision: ${asset.name} (${asset.dataUrl.length} chars)`);
+                                } else {
+                                    // Image attached but no dataUrl - this is a problem!
+                                    const warning = `Image "${asset.name}" is missing data. Try re-uploading the image.`;
+                                    imageWarnings.push(warning);
+                                    console.error(`[Chat] Image missing dataUrl:`, asset.id, asset.name);
+                                }
                             }
                         });
                         
                         if (assetsForContext.length > 0) {
                             linkedEntities.userAssets = assetsForContext;
                         }
+                        
+                        // Log summary
+                        console.log('[Chat] Image summary:', {
+                            totalImages: attachedAssets.filter(a => a.type === 'image').length,
+                            imagesWithData: imageDataUrls.length,
+                            warnings: imageWarnings.length
+                        });
                     }
                 }
             } catch (error) {
-                console.error('Error retrieving attached assets:', error);
+                console.error('[Chat] Error retrieving attached assets:', error);
                 // Continue without assets rather than breaking the entire request
             }
 
             // Check if admin mode is active
             const isAdminModeActive = typeof window !== 'undefined' && localStorage.getItem('5d-admin-mode') === 'true';
+
+            // Log warning if images are missing data (after admin mode check)
+            if (imageWarnings.length > 0) {
+                imageWarnings.forEach(warning => {
+                    addDevLog('error', warning, { issue: 'missing_image_data' });
+                });
+                addDevLog('error', `${imageWarnings.length} image(s) could not be sent to AI - images may need to be re-uploaded`, { warnings: imageWarnings });
+            }
+            
+            // Log image count being sent
+            if (imageDataUrls.length > 0) {
+                addDevLog('api', `Sending ${imageDataUrls.length} image(s) to vision API`, { 
+                    imageCount: imageDataUrls.length,
+                    totalSize: imageDataUrls.reduce((sum, url) => sum + url.length, 0)
+                });
+            }
 
             // Determine if we should use context injection (enabled when we have a mode and entities OR attached assets)
             const hasEntities = linkedEntities.characters.length > 0 || linkedEntities.worlds.length > 0 || linkedEntities.projects.length > 0;
