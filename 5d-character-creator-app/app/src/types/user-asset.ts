@@ -32,7 +32,7 @@ export interface UserAsset {
     type: UserAssetType;
     mimeType: string;
     size: number; // in bytes
-    dataUrl: string; // Base64 data URL for storage
+    dataUrl?: string; // Base64 data URL for storage (optional - may be missing for assets that couldn't be converted)
     thumbnailUrl?: string; // For images/videos
     uploadedAt: Date;
     updatedAt: Date;

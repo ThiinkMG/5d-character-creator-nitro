@@ -368,7 +368,7 @@ export function AssetPicker({ onSelect, onCancel, selectedAssetIds = new Set(), 
             type: item.type,
             mimeType: item.type === 'image' ? 'image/jpeg' : item.type === 'video' ? 'video/mp4' : 'application/pdf',
             size: 0, // Size unknown for generated assets
-            dataUrl: dataUrl || undefined, // Use undefined instead of invalid URL
+            dataUrl: dataUrl ?? undefined, // Use undefined instead of null/invalid URL
             thumbnailUrl: item.type === 'image' ? item.url : undefined,
             uploadedAt: item.uploadedAt || now,
             updatedAt: now,
