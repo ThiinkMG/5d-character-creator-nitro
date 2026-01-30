@@ -265,9 +265,11 @@ export default function MediaPage() {
 
         // User Uploaded Assets
         userAssets.forEach((asset) => {
+            const url = asset.thumbnailUrl ?? asset.dataUrl;
+            if (!url) return;
             items.push({
                 id: `user-asset-${asset.id}`,
-                url: asset.thumbnailUrl || asset.dataUrl,
+                url,
                 type: asset.type,
                 name: asset.name,
                 altText: asset.altText,

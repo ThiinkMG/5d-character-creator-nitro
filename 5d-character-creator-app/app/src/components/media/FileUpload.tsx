@@ -83,7 +83,10 @@ export function FileUpload({
 
                             if (apiKey) {
                                 // Compress if needed
-                                let imageDataUrl = asset.dataUrl;
+                                const originalDataUrl = asset.dataUrl;
+                                if (!originalDataUrl) return;
+
+                                let imageDataUrl: string = originalDataUrl;
                                 if (shouldCompressImage(imageDataUrl)) {
                                     try {
                                         imageDataUrl = await compressImageDataUrl(imageDataUrl);
