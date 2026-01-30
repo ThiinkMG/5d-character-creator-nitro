@@ -200,9 +200,11 @@ export function parseEntityMentions(content: string): Array<{ name: string; id?:
     }
 
     // Match plain @ mentions: @EntityName (for stub creation)
+    // First, remove markdown-style mentions from content to avoid matching IDs like @WORLD_1
+    const contentWithoutMarkdownMentions = content.replace(/\[@[^\]]+\]\([^)]+\)/g, '');
     const plainPattern = /@([A-Za-z0-9_]+)/g;
     match = null;
-    while ((match = plainPattern.exec(content)) !== null) {
+    while ((match = plainPattern.exec(contentWithoutMarkdownMentions)) !== null) {
         // Only add if not already captured in markdown format
         if (!mentions.some(m => m.name === match![1])) {
             mentions.push({

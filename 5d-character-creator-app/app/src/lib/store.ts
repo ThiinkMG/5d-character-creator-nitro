@@ -686,7 +686,15 @@ export const useStore = create<GlobalState>()(
 
             // Phase 1: Entity Stub Creation (@ Mention System)
             createCharacterStub: (name: string) => {
-                const id = `#${name.toUpperCase().replace(/\s+/g, '_')}_${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+                // Generate unique ID with collision detection
+                const prefix = `#${name.toUpperCase().replace(/\s+/g, '_')}_`;
+                let id: string;
+                let attempts = 0;
+                const existingIds = new Set(get().characters.map(c => c.id));
+                do {
+                    id = `${prefix}${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+                    attempts++;
+                } while (existingIds.has(id) && attempts < 100);
                 const now = new Date();
                 const character: Character = {
                     id,
@@ -719,7 +727,15 @@ export const useStore = create<GlobalState>()(
             },
 
             createWorldStub: (name: string) => {
-                const id = `@${name.toUpperCase().replace(/\s+/g, '_')}_${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+                // Generate unique ID with collision detection
+                const prefix = `@${name.toUpperCase().replace(/\s+/g, '_')}_`;
+                let id: string;
+                let attempts = 0;
+                const existingIds = new Set(get().worlds.map(w => w.id));
+                do {
+                    id = `${prefix}${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+                    attempts++;
+                } while (existingIds.has(id) && attempts < 100);
                 const now = new Date();
                 const world: World = {
                     id,
@@ -751,7 +767,15 @@ export const useStore = create<GlobalState>()(
             },
 
             createProjectStub: (name: string) => {
-                const id = `$${name.toUpperCase().replace(/\s+/g, '_')}_${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+                // Generate unique ID with collision detection
+                const prefix = `$${name.toUpperCase().replace(/\s+/g, '_')}_`;
+                let id: string;
+                let attempts = 0;
+                const existingIds = new Set(get().projects.map(p => p.id));
+                do {
+                    id = `${prefix}${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+                    attempts++;
+                } while (existingIds.has(id) && attempts < 100);
                 const now = new Date();
                 const project: Project = {
                     id,
